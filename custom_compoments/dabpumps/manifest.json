@@ -1,0 +1,12 @@
+{
+  "domain": "dabpumps",
+  "name": "DAB Pumps",
+  "codeowners": [ "@ankohanse" ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/ankohanse/hass-dab-pumps",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "2023.12.1"
+}

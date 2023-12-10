@@ -1,0 +1,30 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "[%key:common::config_flow::data::description%]",
+        "data": {
+          "username": "[%key:common::config_flow::data::username%]",
+          "password": "[%key:common::config_flow::data::password%]"
+        }
+      },
+      "device_options": {
+        "description": "[%key:common::config_flow::data::description%]",
+        "data": {
+          "custom_device_name": "[%key:common::config_flow::data::custom_device_name%]",
+          "polling_time": "[%key:common::config_flow::data::polling_time%]",
+          "group_sensors": "[%key:common::config_flow::data::group_sensors%]",
+          "disable_sensors": "[%key:common::config_flow::data::disable_sensors%]"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
+    },
+    "abort": {
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  }
+}
