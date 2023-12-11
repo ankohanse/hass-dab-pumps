@@ -41,12 +41,9 @@ DEFAULT_PASSWORD = ""
 
 CONFIG_SCHEMA = vol.Schema(
     {
-        DOMAIN: vol.Schema({
-            vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-            vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
-        })
-    },
-	extra=vol.ALLOW_EXTRA,
+        vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+        vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
+    }
 )
 
 

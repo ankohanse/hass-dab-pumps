@@ -31,6 +31,17 @@ _LOGGER = logging.getLogger(__name__)
 _LOGGER.info(STARTUP_MESSAGE)
 
 
+CONFIG_SCHEMA = vol.Schema(
+    {
+		DOMAIN: vol.Schema({
+            vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+            vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
+        })
+    }
+)
+
+
+
 async def async_setup(hass, config):
     """Set up DAB Pumps components."""
     hass.data.setdefault(DOMAIN, {})
