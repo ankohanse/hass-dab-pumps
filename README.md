@@ -88,7 +88,7 @@ Any sensors that you do not need can be manually disabled using the HASS GUI.
 ### Sensors
 Sensors are registered to each device as `sensor.{device_name}_{sensor_name}` with an easy to read friendly name of `sensor_name`. 
   
-![sensor](documentation/sensor_detail.jpg)
+![sensor](documentation/sensor_detail.png)
 
 
 ## Troubleshooting
