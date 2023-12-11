@@ -1,5 +1,5 @@
 {
   "name": "DAB Pumps",
   "iot_class": "Cloud Polling",  
-  "render_readme": "Yes"
+  "render_readme": true
 }
