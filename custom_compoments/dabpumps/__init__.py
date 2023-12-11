@@ -39,15 +39,18 @@ PLATFORMS: list[Platform] = [
 ]
 
 
-async def async_setup(hass, config):
-    """Set up DAB Pumps components."""
-    hass.data.setdefault(DOMAIN, {})
-
-    return True
+#async def async_setup(hass, config):
+#    """Set up DAB Pumps components."""
+#    hass.data.setdefault(DOMAIN, {})
+#
+#    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up DAB Pumps from a config entry."""
+    
+    # Setup DOMAIN as default
+    hass.data.setdefault(DOMAIN, {})
     
     # Store an instance of the DabPumpsApi instance in hass.data[domain]
     options = config_entry.data.get('options', {})
