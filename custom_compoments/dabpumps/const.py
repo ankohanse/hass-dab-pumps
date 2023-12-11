@@ -12,8 +12,6 @@ NAME = "DAB Pumps"
 VERSION="2023.12.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
-
-PLATFORMS: list[Platform] = [Platform.SENSOR]
 HUB = "Hub"
 COORDINATOR = "Coordinator"
 

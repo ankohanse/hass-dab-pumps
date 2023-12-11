@@ -39,13 +39,6 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_USERNAME = "user@mydomain.com"
 DEFAULT_PASSWORD = ""
 
-CONFIG_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-        vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
-    }
-)
-
 
 @config_entries.HANDLERS.register("dabpumps")
 class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -110,7 +103,10 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         
         return self.async_show_form(
             step_id = "user", 
-            data_schema = CONFIG_SCHEMA,
+            data_schema = vol.Schema({
+                vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
+                vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
+            }),
             errors = self._errors
         )
         

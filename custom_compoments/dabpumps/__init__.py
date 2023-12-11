@@ -22,7 +22,6 @@ from .const import (
     DOMAIN,
     HUB,
     COORDINATOR,
-    PLATFORMS,
     STARTUP_MESSAGE
 )
 
@@ -30,6 +29,10 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.info(STARTUP_MESSAGE)
 
+
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR
+]
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -39,7 +42,6 @@ CONFIG_SCHEMA = vol.Schema(
         })
     }
 )
-
 
 
 async def async_setup(hass, config):
