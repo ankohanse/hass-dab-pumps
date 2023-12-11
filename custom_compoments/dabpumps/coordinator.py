@@ -23,7 +23,6 @@ from .const import (
     DOMAIN,
     NAME,
     COORDINATOR,
-    PLATFORMS,
     DEFAULT_POLLING_INTERVAL,
 )
 

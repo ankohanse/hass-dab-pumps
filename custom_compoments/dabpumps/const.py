@@ -1,6 +1,5 @@
 """Constants for the DAB Pumps integration."""
 import logging
-from homeassistant.const import Platform
 
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)

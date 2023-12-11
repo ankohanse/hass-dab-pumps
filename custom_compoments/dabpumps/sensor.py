@@ -383,7 +383,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case _: dict = {}
 
         # lookup the dict string for the value and otherwise return the value itself
-        return dict.get(status_val, default=status_val)
+        return dict.get(status_val, status_val)
 
 
 SF = namedtuple('SF', 'friendly, type, scale, unit, sc, ec')

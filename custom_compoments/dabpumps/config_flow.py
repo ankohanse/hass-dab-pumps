@@ -36,10 +36,6 @@ from .dabpumpsapi import (
 _LOGGER = logging.getLogger(__name__)
 
 
-DEFAULT_USERNAME = "user@mydomain.com"
-DEFAULT_PASSWORD = ""
-
-
 @config_entries.HANDLERS.register("dabpumps")
 class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow."""

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import logging
 import json
+import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (device_registry as dr, entity_registry)
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
@@ -22,7 +24,9 @@ from .const import (
     DOMAIN,
     HUB,
     COORDINATOR,
-    STARTUP_MESSAGE
+    STARTUP_MESSAGE,
+    DEFAULT_USERNAME,
+    DEFAULT_PASSWORD
 )
 
 
@@ -33,15 +37,6 @@ _LOGGER.info(STARTUP_MESSAGE)
 PLATFORMS: list[Platform] = [
     Platform.SENSOR
 ]
-
-CONFIG_SCHEMA = vol.Schema(
-    {
-		DOMAIN: vol.Schema({
-            vol.Required(CONF_USERNAME, default=DEFAULT_USERNAME): str,
-            vol.Required(CONF_PASSWORD, default=DEFAULT_PASSWORD): str,
-        })
-    }
-)
 
 
 async def async_setup(hass, config):
