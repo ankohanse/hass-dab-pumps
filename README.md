@@ -104,5 +104,5 @@ logger:
 
 ## Credits
 
-Thank you for giving a great example of how to create a custom controller: [dm82m](https://github.com/dm82m) and [evercape](https://github.com/evercape)
+Thank you for giving a great example of how to create a custom controller: [MindrustUK](https://github.com/MindrustUK)
 

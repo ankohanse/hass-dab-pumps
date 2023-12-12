@@ -24,6 +24,7 @@ from .const import (
     NAME,
     COORDINATOR,
     DEFAULT_POLLING_INTERVAL,
+    CONF_POLLING_INTERVAL,
 )
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -40,7 +41,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Name of the data. For logging purposes.
             name=NAME,
             # Polling interval. Will only be polled if there are subscribers.
-            update_interval=timedelta(seconds=options.get('polling_interval', DEFAULT_POLLING_INTERVAL)),
+            update_interval=timedelta(seconds=options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)),
             update_method=self._async_update_data,
         )
         self._dabpumps_api = dabpumps_api
@@ -49,7 +50,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
     async def _async_update_data(self):
         """Fetch data from API.
-        
+        _LOGGER.info(f"Update data)
+
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
@@ -58,6 +60,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # handled by the data update coordinator.
             async with async_timeout.timeout(60):
                 (device_map, status_map) = await self._dabpumps_api.async_detect_device_statusses()
+                
+                _LOGGER.debug(f"device_map: {device_map}")
+                _LOGGER.debug(f"status_map: {status_map}")
+                
                 return (device_map, status_map)
 
         except DabPumpsApiAuthError as err:

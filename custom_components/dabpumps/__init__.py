@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import (device_registry as dr, entity_registry)
+from homeassistant.helpers import (device_registry as DeviceRegistry, entity_registry as EntityRegistry)
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.translation import async_get_translations
 
@@ -56,13 +56,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     options = config_entry.data.get('options', {})
     username = config_entry.data[CONF_USERNAME]
     password = config_entry.data[CONF_PASSWORD]
-
+    
     dabpumps_api = DabPumpsApi(username, password)
     coordinator = DabPumpsCoordinator(hass, dabpumps_api, options)
-
+    
     hass.data[DOMAIN][HUB] = dabpumps_api
     hass.data[DOMAIN][COORDINATOR] = coordinator
-
+    
+    _LOGGER.info(f"Setup config entry for username '{username}' and password '********'")
+    
     # Fetch initial data so we have data when entities subscribe
     #
     # If the refresh fails, async_config_entry_first_refresh will
@@ -72,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     # Forward to all platforms (sensor, switch, ...)
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
-    
+
     return True
 
 

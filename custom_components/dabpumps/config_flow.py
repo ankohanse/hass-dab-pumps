@@ -25,6 +25,7 @@ from .const import (
     DEFAULT_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_POLLING_INTERVAL,
+    CONF_POLLING_INTERVAL,
 )
 
 from .dabpumpsapi import (
@@ -42,15 +43,16 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
-    # Make sure user input data is passed from one step to the next using user_input_from_step_user
     def __init__(self):
+        """Initialize config flow."""
         self._username = DEFAULT_USERNAME
         self._password = DEFAULT_PASSWORD
         self._errors = None
 
 
     async def async_try_connection(self):
-        _LOGGER.debug("DAB Pumps trying connection...")
+        """Test the username and password by connecting to the DConnect website"""
+        _LOGGER.debug("Trying connection...")
 
         dabpumps_api = DabPumpsApi(self._username, self._password)
         try:
@@ -58,21 +60,21 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             device_map = await dabpumps_api.async_detect_devices()
             
         except DabPumpsApiError as e:
-            return f"Failed to connect to DABPumps website: {e}"
+            return f"Failed to connect to DAB Pumps DConnect website: {e}"
             
         except DabPumpsApiAuthError as e:
             return f"Authentication failed: {e}"
 
-        _LOGGER.debug("DAB Pumps successfull connection!")
+        _LOGGER.debug("Successfully connected!")
         return None
         
 
     # This is step 1 for the user/pass function.
     async def async_step_user(self, user_input=None) -> FlowResult:
-        """Handle the initial step."""
-
+        """Handle a flow initialized by the user."""
+        
         if user_input is not None:
-            _LOGGER.debug(f"DAB Pumps config flow handle user input")
+            _LOGGER.debug(f"Config flow handle user input")
             
             self._username = user_input[CONF_USERNAME]
             self._password = user_input[CONF_PASSWORD]
@@ -95,7 +97,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             
         # Show the form with the username+password
-        _LOGGER.debug(f"DAB Pumps config flow show user input form")
+        _LOGGER.debug(f"Config flow show user input form")
         
         return self.async_show_form(
             step_id = "user", 
@@ -105,7 +107,14 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             }),
             errors = self._errors
         )
-        
+    
+    
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
+
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handles options flow for the component."""
@@ -119,29 +128,27 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Manage the options."""
         if user_input is not None:
-            _LOGGER.debug(f"DAB Pumps options flow handle user input")
+            _LOGGER.debug(f"Options flow handle user input")
             self._errors = []
             
             if not errors:
                 # Value of data will be set on the options property of the config_entry instance.
-                self.async_update_entry(
-                    self.config_entry, 
+                return self.async_create_entry(
+                    title="",
                     data = {
-                        'polling_interval': user_input['polling interval']
-                    }, 
-                    options=self.config_entry.options
+                        CONF_POLLING_INTERVAL: user_input['polling interval']
+                    }
                 )
-                return self.async_create_entry(title="", data={})
-                
+
             _LOGGER.error(f"Error: {self._errors}")
             
         # Show the form with the options
-        _LOGGER.debug(f"DAB Pumps options flow show user input form")
+        _LOGGER.debug(f"Options flow show user input form")
         
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required("polling interval", default=self.config_entry.options.get("polling_interval", DEFAULT_POLLING_INTERVAL)): 
+                vol.Required(CONF_POLLING_INTERVAL, default=self.config_entry.options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)): 
                     vol.All(vol.Coerce(int), vol.Range(min=5))
             }),
             errors = self._errors

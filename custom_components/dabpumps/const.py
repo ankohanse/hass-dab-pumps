@@ -18,6 +18,8 @@ DEFAULT_USERNAME = "email@mycompany.com"
 DEFAULT_PASSWORD = ""
 DEFAULT_POLLING_INTERVAL = 20
 
+CONF_POLLING_INTERVAL = "polling_interval"
+
 ATTR_PRODUCT_DESCRIPTION = "Product Description"
 ATTR_DESTINATION_NAME = "Destination Name"
 ATTR_LAST_UPDATED = "Last Updated"

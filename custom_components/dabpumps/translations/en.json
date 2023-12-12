@@ -1,13 +1,5 @@
 {
     "config": {
-        "abort": {
-            "already_configured": "Device is already configured"
-        },
-        "error": {
-            "cannot_connect": "Failed to connect",
-            "invalid_auth": "Invalid authentication",
-            "unknown": "Unexpected error"
-        },
         "step": {
             "user": {
                 "description": "Please enter your DAB Pumps account information below:",
@@ -15,16 +7,27 @@
                     "password": "Password",
                     "username": "Username"
                 }
-            },
-            "device_options": {
-                "description": "Please select the following options:",
+            }
+        },
+        "error": {
+            "cannot_connect": "Failed to connect",
+            "invalid_auth": "Invalid authentication",
+            "unknown": "Unexpected error"
+        },
+        "abort": {
+            "already_configured": "Device is already configured"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title":"Configure General Options",
                 "data": {
-                    "custom_device_name": "Friendly device name",
-                    "polling_time": "Polling time (in seconds) to update sensors from device",
-                    "group_sensors": "Group sensors on device page",
-                    "disable_sensors": "Disable diagnostics sensors"
+                    "polling_interval": "Polling interval to update sensors (seconds)"
                 }
             }
+        },
+        "error": {
         }
     }
 }

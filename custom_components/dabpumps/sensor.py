@@ -48,7 +48,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
 
     if not device_map or not status_map:
         # If data returns False or is empty, log an error and return
-        _LOGGER.warning(f"DAB Pumps: Failed to fetch sensor data - authentication failed or no data.")
+        _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
         return
     
     # Iterate all statusses to create sensor entities
@@ -56,7 +56,12 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     for object_id, status in status_map.items():
 
         # only process statusses that we know can be transformed into a sensor
-        if (status.key not in SENSOR_FIELDS.keys()):
+        if status.key not in SENSOR_FIELDS.keys():
+            _LOGGER.info(f"No item in knowledgebase to create sensor for '{status.key}' with value '{status.val}'. You may want to ask the maintainer of this custom integration to add it.")
+            continue
+        
+        if not SENSOR_FIELDS.get(status.key, None):
+            # Some statusses (error1...error64) are deliberately skipped
             continue
         
         device = device_map.get(status.serial, None)
@@ -67,15 +72,20 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         sensor = DabPumpsSensor(coordinator, device, status, object_id)
         sensors.append(sensor)
     
-    _LOGGER.info(f"Setup integration with {len(device_map)} devices and {len(sensors)} sensors")
+    _LOGGER.info(f"Setup integration entry with {len(device_map)} devices and {len(sensors)} sensors")
     
     if sensors:
         async_add_entities(sensors)
 
 
-#This is the actual instance of SensorEntity class
 class DabPumpsSensor(CoordinatorEntity, SensorEntity):
-    """Representation of a DAB Pumps Sensor."""
+    """
+    Representation of a DAB Pumps Sensor.
+    
+    Could be a sensor that is part of a pump like ESybox, Esybox.mini
+    Or could be part of a communication module like DConnect Box/Box2
+    
+    """
     
     def __init__(self, coordinator, device, status, object_id) -> None:
         """ Initialize the sensor. """
@@ -92,7 +102,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         # Create all attributes
         self._update_attributes(device, status, True)
     
-
+    
     @property
     def suggested_object_id(self) -> str | None:
         """Return input for object id."""
@@ -126,7 +136,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         if device and status:
             if self._update_attributes(device, status, False):
                 self.async_write_ha_state()
-
+    
     
     def _update_attributes(self, device, status, is_create):
         
@@ -386,6 +396,12 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         return dict.get(status_val, status_val)
 
 
+#
+# Below follows the knowledgebase of all known sensor fields.
+# Add new field definitions when needed.
+#
+# A limited number of fields (error1...error64) are deliberately left out of this list
+#
 SF = namedtuple('SF', 'friendly, type, scale, unit, sc, ec')
 SENSOR_FIELDS = {
     #

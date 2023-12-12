@@ -8,15 +8,6 @@
           "password": "[%key:common::config_flow::data::password%]"
         }
       },
-      "device_options": {
-        "description": "[%key:common::config_flow::data::description%]",
-        "data": {
-          "custom_device_name": "[%key:common::config_flow::data::custom_device_name%]",
-          "polling_time": "[%key:common::config_flow::data::polling_time%]",
-          "group_sensors": "[%key:common::config_flow::data::group_sensors%]",
-          "disable_sensors": "[%key:common::config_flow::data::disable_sensors%]"
-        }
-      }
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
@@ -25,6 +16,18 @@
     },
     "abort": {
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configure General Options",
+        "data": {
+          "polling_interval": "Polling interval",
+        },
+      }
+    },
+    "error": {
     }
   }
 }
