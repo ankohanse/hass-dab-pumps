@@ -2,7 +2,7 @@
     "config": {
         "step": {
             "user": {
-                "description": "Please enter your DAB Pumps account information below:",
+                "description": "Please enter your DAB Pumps DConnect account details:",
                 "data": {
                     "password": "Password",
                     "username": "Username"
@@ -21,7 +21,7 @@
     "options": {
         "step": {
             "init": {
-                "title":"Configure General Options",
+                "title":"General Options",
                 "data": {
                     "polling_interval": "Polling interval to update sensors (seconds)"
                 }

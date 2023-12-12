@@ -21,7 +21,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Configure General Options",
+        "title": "General Options",
         "data": {
           "polling_interval": "Polling interval",
         },
