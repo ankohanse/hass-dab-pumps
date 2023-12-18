@@ -1,6 +1,10 @@
 """Constants for the DAB Pumps integration."""
 import logging
 
+from homeassistant.const import (
+    CONF_USERNAME,
+    CONF_PASSWORD,
+)
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 #_LOGGER = logging.getLogger("custom_components.dabpumps")
@@ -12,13 +16,19 @@ VERSION="2023.12.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"
+API = "Api"
 COORDINATOR = "Coordinator"
 
-DEFAULT_USERNAME = "email@mycompany.com"
+DEFAULT_USERNAME = ""
 DEFAULT_PASSWORD = ""
 DEFAULT_POLLING_INTERVAL = 20
 
+CONF_INSTALL_ID = "install_id"
+CONF_INSTALL_NAME = "install_name"
+CONF_OPTIONS = "options"
 CONF_POLLING_INTERVAL = "polling_interval"
+
+DIAGNOSTICS_REDACT = { CONF_PASSWORD }
 
 ATTR_PRODUCT_DESCRIPTION = "Product Description"
 ATTR_DESTINATION_NAME = "Destination Name"

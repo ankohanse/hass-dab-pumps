@@ -7,6 +7,12 @@
                     "password": "Password",
                     "username": "Username"
                 }
+            },
+            "install": {
+                "descripton": "Choose your DAB Pumps installation",
+                "data": {
+                    "install_name": "installation"
+                }
             }
         },
         "error": {

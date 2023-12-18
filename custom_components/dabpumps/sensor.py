@@ -31,9 +31,15 @@ from collections import namedtuple
 from .const import (
     DOMAIN,
     COORDINATOR,
+    CONF_INSTALL_ID,
+    CONF_INSTALL_NAME,
+    CONF_OPTIONS,
 )
 
-from .dabpumpsapi import DabPumpsApi
+from .coordinator import (
+    get_dabpumpscoordinator,
+    DabPumpsCoordinator
+)
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -42,8 +48,12 @@ _LOGGER = logging.getLogger(__name__)
 # Setting up the adding and updating of sensor entities
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
 
-    # Retrieve the devices and their data via the coordinator
-    coordinator: DabPumpsCoordinator = hass.data[DOMAIN][COORDINATOR]
+    install_id = config_entry.data[CONF_INSTALL_ID]
+    install_name = config_entry.data[CONF_INSTALL_NAME]
+    options = config_entry.data.get(CONF_OPTIONS, {})
+
+    # Get an instance of the DabPumpsCoordinator for this install_id
+    coordinator = get_dabpumpscoordinator(hass, config_entry)
     (device_map, status_map) = coordinator.data
 
     if not device_map or not status_map:
@@ -51,30 +61,38 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
         _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
         return
     
+    _LOGGER.debug(f"Create sensors for installation '{install_name}' ({install_id})")
+    
     # Iterate all statusses to create sensor entities
     sensors = []
     for object_id, status in status_map.items():
+        
+        # skip statusses that are not associated with a device in this installation
+        device = device_map.get(status.serial, None)
+        if not device or device.install_id != install_id:
+            continue
 
         # only process statusses that we know can be transformed into a sensor
         if status.key not in SENSOR_FIELDS.keys():
-            _LOGGER.info(f"Sensor fields list holds no info to create a sensor for '{status.key}' with value '{status.val}'. You may want to ask the maintainer of this custom integration to add it.")
+            _LOGGER.warning(f"Sensor fields list holds no info to create a sensor for '{status.key}' with value '{status.val}'. You may want to ask the maintainer of this custom integration to add it.")
             continue
         
-        if not SENSOR_FIELDS.get(status.key, None):
+        field = SENSOR_FIELDS[status.key]
+        if not field:
             # Some statusses (error1...error64) are deliberately skipped
-            _LOGGER.info(f"Sensor fields list indicates to not create a sensor for '{status.key}' with value '{status.val}'.")
+            _LOGGER.debug(f"Sensor fields list indicates to not create a sensor for '{status.key}' with value '{status.val}'.")
             continue
         
-        device = device_map.get(status.serial, None)
-        if not device:
+        if not isinstance(field, SF):
+            # skip statusses that are not meant to become a sensor. Should be picked up by binary_sensor, switch...
+            _LOGGER.debug(f"Sensor fields list indicates to not create an entity other than sensor for '{status.key}' with value '{status.val}'.")
             continue
-            
+        
         # Instantiate a DabPumpsSensor
-        sensor = DabPumpsSensor(coordinator, device, status, object_id)
+        sensor = DabPumpsSensor(coordinator, install_id, object_id, status, device)
         sensors.append(sensor)
     
-    _LOGGER.info(f"Setup integration entry with {len(device_map)} devices and {len(sensors)} sensors")
-    
+    _LOGGER.info(f"Setup integration entry for installation '{install_name} with {len(device_map)} devices and {len(sensors)} sensors")
     if sensors:
         async_add_entities(sensors)
 
@@ -88,13 +106,14 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
     
     """
     
-    def __init__(self, coordinator, device, status, object_id) -> None:
+    def __init__(self, coordinator, install_id, object_id, status, device) -> None:
         """ Initialize the sensor. """
         super().__init__(coordinator)
         
         # The unique identifier for this sensor within Home Assistant
         self.object_id = object_id
         self.entity_id = ENTITY_ID_FORMAT.format(status.unique_id)
+        self.install_id = install_id
         
         self._coordinator = coordinator
         self._device = device
@@ -130,8 +149,8 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         (device_map, status_map) = self._coordinator.data
         
         # find the correct device and status corresponding to this sensor
-        device = device_map.get(self._device.serial)
-        status = status_map.get(self.object_id)
+        device = device_map.get(self._device.serial, None)
+        status = status_map.get(self.object_id, None)
         
         # Update any attributes
         if device and status:
@@ -166,6 +185,8 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         
         # update creation-time only attributes
         if is_create:
+            _LOGGER.debug(f"Create sensor '{field.friendly}' ({status.unique_id})")
+
             self._attr_unique_id = status.unique_id
             
             self._attr_has_entity_name = True
@@ -176,7 +197,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             self._attr_device_class = self._get_device_class(field) 
             self._attr_entity_category = self._get_entity_category(field)
             changed = True
-        
+
         # update value if it has changed
         if is_create or self._attr_native_value != field_val:
             self._attr_native_value = field_val

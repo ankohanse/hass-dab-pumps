@@ -1,11 +1,16 @@
-from datetime import timedelta
 import logging
-
 import async_timeout
 
+from datetime import timedelta
+from typing import Any
+
+from homeassistant.components.diagnostics import REDACTED
+from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.components.light import LightEntity
 from homeassistant.components.sensor import SensorEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -13,7 +18,12 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
+from homeassistant.const import (
+    CONF_USERNAME,
+    CONF_PASSWORD,
+)
 from .dabpumpsapi import (
+    get_dabpumpsapi,
     DabPumpsApi,
     DabPumpsApiAuthError,
     DabPumpsApiError,
@@ -24,17 +34,48 @@ from .const import (
     NAME,
     COORDINATOR,
     DEFAULT_POLLING_INTERVAL,
+    CONF_INSTALL_ID,
+    CONF_INSTALL_NAME,
     CONF_POLLING_INTERVAL,
+    DIAGNOSTICS_REDACT
 )
 
-_LOGGER: logging.Logger = logging.getLogger(__package__)
+
+_LOGGER = logging.getLogger(__name__)
+
+
+def get_dabpumpscoordinator(hass: HomeAssistant, config_entry: ConfigEntry):
+
+    # Get properties from the config_entry
+    username = config_entry.data[CONF_USERNAME]
+    password = config_entry.data[CONF_PASSWORD]
+    install_id = config_entry.data[CONF_INSTALL_ID]
+    install_name = config_entry.data[CONF_INSTALL_NAME]
+    options = config_entry.options
+    
+    if not COORDINATOR in hass.data[DOMAIN]:
+        hass.data[DOMAIN][COORDINATOR] = {}
+        
+    # already created?
+    coordinator = hass.data[DOMAIN][COORDINATOR].get(install_id, None)
+    if not coordinator:
+        # Get an instance of the DabPumpsApi for these credentials
+        # This instance may be shared with other coordinators that use the same credentials
+        api = get_dabpumpsapi(hass, username, password)
+    
+        # Get an instance of our coordinator. This is unique to this install_id
+        coordinator = DabPumpsCoordinator(hass, api, install_id, options)
+        hass.data[DOMAIN][COORDINATOR][install_id] = coordinator
+        
+    return coordinator
 
 
 class DabPumpsCoordinator(DataUpdateCoordinator):
     """My custom coordinator."""
     
-    def __init__(self, hass, dabpumps_api, options):
+    def __init__(self, hass, dabpumps_api, install_id, options):
         """Initialize my coordinator."""
+        
         super().__init__(
             hass,
             _LOGGER,
@@ -45,25 +86,26 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             update_method=self._async_update_data,
         )
         self._dabpumps_api = dabpumps_api
+        self._install_id = install_id
         self._options = options
     
     
     async def _async_update_data(self):
         """Fetch data from API.
-        _LOGGER.info(f"Update data)
-
+        
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
+        _LOGGER.debug(f"Update data")
+
         try:
             # Note: asyncio.TimeoutError and aiohttp.ClientError are already
             # handled by the data update coordinator.
             async with async_timeout.timeout(60):
-                (device_map, status_map) = await self._dabpumps_api.async_detect_device_statusses()
+                (device_map, status_map) = await self._dabpumps_api.async_detect_install_statusses(self._install_id)
                 
                 _LOGGER.debug(f"device_map: {device_map}")
                 _LOGGER.debug(f"status_map: {status_map}")
-                
                 return (device_map, status_map)
 
         except DabPumpsApiAuthError as err:
@@ -73,5 +115,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             
         except DabPumpsApiError as err:
             raise UpdateFailed(f"Error communicating with API: {err}")
+            
+            
+    def get_diagnostics(self) -> dict[str, Any]:
+        return {
+            "install_id": self._install_id,
+            "api": async_redact_data(self._dabpumps_api.get_diagnostics(), DIAGNOSTICS_REDACT),
+        },
 
 
