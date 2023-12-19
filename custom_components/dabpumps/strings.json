@@ -29,7 +29,7 @@
       "init": {
         "title": "General Options",
         "data": {
-          "polling_interval": "Polling interval",
+          "polling_interval": "Polling interval"
         }
       }
     },
