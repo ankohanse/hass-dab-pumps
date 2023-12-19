@@ -9,7 +9,7 @@
                 }
             },
             "install": {
-                "descripton": "Choose your DAB Pumps installation",
+                "description": "Choose your DAB Pumps installation",
                 "data": {
                     "install_name": "installation"
                 }
