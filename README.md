@@ -15,10 +15,19 @@ This device depends on the DAB Pumps DConnect website to retrieve the device inf
 
 If you have a device that is supported for DConnect then:
 - Enable your DAB Pumps devices to connect to DConnect. For more information on this, see the manual of your device.
-- Setup an account on the DConnect website [internetofpumps.com](https://internetofpumps.com/). Select 'Professional Users' and 'Open DConnect', or one of the apps. Remember the email address and password for the account as these are needed during setup of this Home Assistant integration.
+- Setup an account for DConnect website, see 'DAB Pump Account' below. Remember the email address and password for the account as these are needed during setup of this Home Assistant integration.
 - In DConnect, add your installation via the device serial number.
 
 At the moment there is no support in the integration for devices that are connected to the DAB Live website instead of the DConnect website.
+
+
+## DAB Pumps Account
+The DAB Pumps DConnect website and apps seem to have a problem with multiple logins from the same account. I.e. when already logged into the app or website, then a subsequent login via this integration may fail. 
+
+Therefore it is recommended to create a separate account within DAB Pumps DConnect that is specific for this HA integration. 
+- Create a fresh email address specifically for Home Assistant at gmail, outlook or another provider. 
+- Register this email address in the DAB Pumps DConnect website. Go to  [internetofpumps.com](https://internetofpumps.com/). Select 'Professional Users' and 'Open DConnect', or one of the apps. 
+- Then, while logged in into DAB Pumps DConnect using your normal account, go to 'installation settings' and under 'manage permissions' press 'Add member' to invite the newly created email account. Access level 'Customer' should be sufficient.
 
 
 ## Installation
@@ -27,17 +36,15 @@ At the moment there is no support in the integration for devices that are connec
 
 1. Just search for "DAB Pumps" integration in HACS. It will be automatically installed to the `custom_integration/dabpumps` directory
 2. Restart Home Assistant.
-3. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "DAB Pumps"
-4. Follow the UI based [Configuration](#Configuration)
+3. Follow the UI based [Configuration](#Configuration)
 
 
 ### Manual install
 
-Under the `<config directory>/custom_components/` directory create a directory called `dabpumps`. 
-Copying all files in `/custom_components/dabpumps/` folder from this repo into the new `<config directory>/custom_components/dabpumps/` directory you just created.
-
+1. Under the `<config directory>/custom_components/` directory create a directory called `dabpumps`. 
+Copying all files in `/custom_components/dabpumps/` folder from this repo into the new `<config directory>/custom_components/dabpumps/` directory you just created.<br/>
+<br/>
 This is how your custom_components directory should look like:
-
 ```bash
 custom_components
 ├── dabpumps
@@ -53,7 +60,8 @@ custom_components
 │   └── strings.json  
 ```
 
-Finally, restart Home Assistant
+2. Restart Home Assistant.
+3. Follow the UI based [Configuration](#Configuration)
 
 ## Configuration
 
@@ -75,7 +83,7 @@ The following properties are required to connect to the DConnect service:
 
 
 ### Installations and devices
-After succcessful setup, all devices from known installations in DConnect should show up in a list.
+After succcessful setup, all devices from the installation in DConnect should show up in a list.
 
 ![controller_list](documentation/controller_list.png)
 
