@@ -49,8 +49,8 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
     ```bash
     custom_components
     ├── dabpumps
-    ├────── translations
-    │   ├───└── en.json
+    │   ├── translations
+    │   │   └── en.json
     │   ├── __init__.py
     │   ├── config_flow.py
     │   ├── const.py
