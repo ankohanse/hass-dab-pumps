@@ -42,23 +42,25 @@ Therefore it is recommended to create a separate account within DAB Pumps DConne
 ### Manual install
 
 1. Under the `<config directory>/custom_components/` directory create a directory called `dabpumps`. 
-Copying all files in `/custom_components/dabpumps/` folder from this repo into the new `<config directory>/custom_components/dabpumps/` directory you just created.<br/>
-<br/>
-This is how your custom_components directory should look like:
-```bash
-custom_components
-├── dabpumps
-├────── translations
-│   ├───└── en.json
-│   ├── __init__.py
-│   ├── config_flow.py
-│   ├── const.py
-│   ├── coordinator.py
-│   ├── dabpumpsapi.py
-│   ├── manifest.json
-│   ├── sensor.py
-│   └── strings.json  
-```
+Copying all files in `/custom_components/dabpumps/` folder from this repo into the new `<config directory>/custom_components/dabpumps/` directory you just created.
+
+    This is how your custom_components directory should look like:
+
+    ```bash
+    custom_components
+    ├── dabpumps
+    ├────── translations
+    │   ├───└── en.json
+    │   ├── __init__.py
+    │   ├── config_flow.py
+    │   ├── const.py
+    │   ├── coordinator.py
+    │   ├── dabpumpsapi.py
+    │   ├── diagnostics.py
+    │   ├── manifest.json
+    │   ├── sensor.py
+    │   └── strings.json  
+    ```
 
 2. Restart Home Assistant.
 3. Follow the UI based [Configuration](#Configuration)
