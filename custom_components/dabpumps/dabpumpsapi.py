@@ -224,28 +224,34 @@ class DabPumpsApi:
             suffix_id = SIMULATE_SUFFIX_ID if test else ""
             suffix_name = SIMULATE_SUFFIX_NAME if test else ""
             
-            for installation in installation_map.values():
+            for ins_idx, installation in enumerate(installation_map.values()):
                 
-                install_id = DabPumpsApi.create_id(installation.get('installation_id', ''), suffix_id)
-                install_name = installation.get('name', '') + suffix_name
+                ins_id = installation.get('installation_id', '')
+                ins_name = installation.get('name', None) or installation.get('description', None) or f"installation {ins_idx}"
+                
+                install_id = DabPumpsApi.create_id(ins_id + suffix_id)
+                install_name = ins_name + suffix_name
                 install_devices = []
 
                 _LOGGER.debug(f"DAB Pumps installation found: {install_name}")
                     
-                for dum in installation.get('dums', []):
+                for dum_idx, dum in enumerate(installation.get('dums', [])):
                     
-                    device_id = DabPumpsApi.create_id(dum.get('name', ''), suffix_id)
-                    device_serial = dum.get('serial', '') + suffix_id
-                    device_name = dum.get('name', '') + suffix_name
+                    dum_serial = dum.get('serial', '')
+                    dum_name = dum.get('name', None) or dum.get('distro_embedded', None) or dum.get('distro', None) or f"device {dum_idx}"
+
+                    device_id = DabPumpsApi.create_id(dum_name + suffix_id)
+                    device_serial = dum_serial + suffix_id
+                    device_name = dum_name + suffix_name
 
                     device = DabPumpsDevice(
                         vendor = 'DAB Pumps',
                         name = device_name,
                         id = device_id,
                         serial = device_serial,
-                        product = dum.get('distro_embedded', dum.get('distro', '')),
-                        version = dum.get('version_embedded', dum.get('version', '')),
-                        build = dum.get('channel_embedded', dum.get('channel', '')),
+                        product = dum.get('distro_embedded', None) or dum.get('distro', None) or '',
+                        version = dum.get('version_embedded', None) or dum.get('version', None) or '',
+                        build = dum.get('channel_embedded', None) or dum.get('channel', None) or '',
                         install_id = install_id,
                     )
                     device_map[device_serial] = device
@@ -256,10 +262,10 @@ class DabPumpsApi:
                 install = DabPumpsInstall(
                     id = install_id,
                     name = install_name,
-                    description = installation.get('description', ''),
-                    company = installation.get('company', ''),
-                    address = installation.get('address', ''),
-                    timezone = installation.get('timezone', ''),
+                    description = installation.get('description', None) or '',
+                    company = installation.get('company', None) or '',
+                    address = installation.get('address', None) or '',
+                    timezone = installation.get('timezone', None) or '',
                     devices = install_devices
                 )
                 install_map[install_id] = install
