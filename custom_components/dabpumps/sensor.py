@@ -174,8 +174,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
                 field_precision = 0
                 field_val = int(round(float(status.val) / field.scale, 0))
             case 'enum':
-                field_precision = None
-                field_val = self._get_enum_value(field, status.key, status.val)
+                (field_precision, field_val) = self._get_enum_value(field, status.key, status.val)
+            case 'other': 
+                (field_precision, field_val) = self._get_other_value(field, status.key, status.val)
             case 'string' | _: 
                 field_precision = None
                 field_val = str(status.val)
@@ -297,7 +298,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'd':       return EntityCategory.DIAGNOSTIC
             case 'c':       return EntityCategory.CONFIG
             case _:         return None
-            
+    
     
     def _get_enum_value(self, field, status_key, status_val):
         match status_key:
@@ -423,7 +424,30 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case _: dict = {}
 
         # lookup the dict string for the value and otherwise return the value itself
-        return dict.get(status_val, status_val)
+        field_precision = None
+        field_val = dict.get(status_val, status_val)
+        
+        return (field_precision, field_val)
+
+
+    def _get_other_value(self, field, status_key, status_val):
+        """Handling of special cases, that may behave different depending on product"""
+        
+        field_precision = None
+        field_val = status_val
+        
+        match status_key:
+            case 'TE_HeatsinkTemperatureC' | 'TE_HeatsinkTemperatureF':
+                if '_mini_' in self._device.product:
+                    # '208' becomes 20.8
+                    field_precision = 1
+                    field_val = round(float(status_val) / 10.0, 1)
+                else:
+                    # '22' becomes 22
+                    field_precision = 0
+                    field_val = int(round(float(status_val), 0))
+                
+        return (field_precision, field_val)
 
 
 #
@@ -502,7 +526,7 @@ SENSOR_FIELDS = {
     'PO_OutputPower':                  SF(friendly='Output power (PO)',                    type='int',    scale=1,    unit='W',     sc='m',  ec=None ),
     'PR_RemotePressureSensor':         SF(friendly='Remote pressure sensor (PR)',          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'PanelBoardId':                    SF(friendly='Panel board id',                       type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PartialEnergy':                   SF(friendly='Partial energy',                       type='int',    scale=1,    unit='kWh',   sc=None, ec=None ),
+    'PartialEnergy':                   SF(friendly='Partial energy',                       type='int',    scale=10,   unit='kWh',   sc=None, ec=None ),
     'PowerShowerBoost':                SF(friendly='Power shower boost',                   type='int',    scale=1,    unit='%',     sc=None, ec='d'  ),
     'PowerShowerCommand':              SF(friendly='Power shower command',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'PowerShowerCountdown':            SF(friendly='Power shower countdown',               type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
@@ -539,9 +563,9 @@ SENSOR_FIELDS = {
     'T1_LowPressureDelay':             SF(friendly='Low pressure delay (T1)',              type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
     'T2_SwitchOffDelay':               SF(friendly='Switch off delay (T2)',                type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
     'TB_DryRunDetectTime':             SF(friendly='Dry run detect time (TB)',             type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'TE_HeatsinkTemperatureC':         SF(friendly='Heatsink temperature (TE)',            type='int',    scale=1,    unit='°C',    sc='m',  ec=None ),
-    'TE_HeatsinkTemperatureF':         SF(friendly='Heatsink temperature (TE)',            type='int',    scale=1,    unit='°F',    sc='m',  ec=None ),
-    'TotalEnergy':                     SF(friendly='Total energy',                         type='int',    scale=1,    unit='kWh',   sc=None, ec=None ),
+    'TE_HeatsinkTemperatureC':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°C',    sc='m',  ec=None ),
+    'TE_HeatsinkTemperatureF':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°F',    sc='m',  ec=None ),
+    'TotalEnergy':                     SF(friendly='Total energy',                         type='int',    scale=10,   unit='kWh',   sc=None, ec=None ),
     'UpdateFirmware':                  SF(friendly='Firmware update',                      type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
     'UpdateProgress':                  SF(friendly='Update progress',                      type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'UpdateType':                      SF(friendly='Update type',                          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
