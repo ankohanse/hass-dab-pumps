@@ -170,16 +170,19 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'float': 
                 field_precision = int(math.floor(math.log10(field.scale)))
                 field_val = round(float(status.val) / field.scale, field_precision)
+                field_unit = field.unit
             case 'int':    
                 field_precision = 0
                 field_val = int(round(float(status.val) / field.scale, 0))
+                field_unit = field.unit
             case 'enum':
-                (field_precision, field_val) = self._get_enum_value(field, status.key, status.val)
+                (field_precision, field_val, field_unit) = self._get_enum_value(field, status.key, status.val)
             case 'other': 
-                (field_precision, field_val) = self._get_other_value(field, status.key, status.val)
+                (field_precision, field_val, field_unit) = self._get_other_value(field, status.key, status.val)
             case 'string' | _: 
                 field_precision = None
                 field_val = str(status.val)
+                field_unit = field.unit
                 
         # Process any changes
         changed = False
@@ -202,7 +205,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         # update value if it has changed
         if is_create or self._attr_native_value != field_val:
             self._attr_native_value = field_val
-            self._attr_native_unit_of_measurement = field.unit
+            self._attr_native_unit_of_measurement = field_unit
             self._attr_suggested_display_precision = field_precision
 
             self._attr_icon = self._get_icon(field, field_val)
@@ -311,10 +314,17 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
                     '5': '4',
                 }
             
-            case 'AE_AntiLock' | 'AF AntiFreeze' | 'AY_AntiCycling' | 'CheckUpdates' | 'SleepModeEnable': 
+            case 'AE_AntiLock' | 'AF_AntiFreeze' | 'CheckUpdates' | 'SleepModeEnable': 
                 dict = {
-                    '0': 'Enabled',
-                    '1': 'Disabled',
+                    '0': 'Disabled',
+                    '1': 'Enabled',
+                }
+            
+            case 'AY_AntiCycling': 
+                dict = {
+                    '0': 'Disabled',
+                    '1': 'Enabled',
+                    '2': 'Smart',
                 }
             
             case 'FirmwareStatus': 
@@ -426,8 +436,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         # lookup the dict string for the value and otherwise return the value itself
         field_precision = None
         field_val = dict.get(status_val, status_val)
+        field_unit = None
         
-        return (field_precision, field_val)
+        return (field_precision, field_val, field_unit)
 
 
     def _get_other_value(self, field, status_key, status_val):
@@ -446,8 +457,29 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
                     # '22' becomes 22
                     field_precision = 0
                     field_val = int(round(float(status_val), 0))
-                
-        return (field_precision, field_val)
+                field_unit = '°C' if status_key=='TE_HeatsinkTemperatureC' else '°F'
+            
+            case 'MemFree':
+                if '_mini_' in self._device.product:
+                    field_precision = 0
+                    field_val = int(round(float(status_val), 0))
+                    field_unit = 'B'
+                else:
+                    field_precision = 0
+                    field_val = int(round(float(status_val), 0))
+                    field_unit = 'kB'
+
+            case 'RamUsed' | 'RamUsedMax':
+                if '_mini_' in self._device.product:
+                    field_precision = 1
+                    field_val = round(float(status_val) * 0.0009765625, 1)
+                    field_unit = 'kB'
+                else:
+                    field_precision = 1
+                    field_val = round(float(status_val), 1)
+                    field_unit = '%'
+
+        return (field_precision, field_val, field_unit)
 
 
 #
@@ -497,9 +529,9 @@ SENSOR_FIELDS = {
     'InverterPresentNumber':           SF(friendly='Inverter present number',              type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
     'KernelVersion':                   SF(friendly='Kernel version',                       type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'LA_Language':                     SF(friendly='Language (LA)',                        type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'Last_Period_Flow_Counter':        SF(friendly='Last period flow counter',             type='int',    scale=1,    unit= None,   sc=None, ec=None ),
-    'Last_Period_Flow_Counter_Gall':   SF(friendly='Last period flow counter',             type='int',    scale=1,    unit= 'gal',  sc=None, ec=None ),
-    'Last_Period_Energy_Counter':      SF(friendly='Last period energy counter',           type='int',    scale=1,    unit= None,   sc=None, ec=None ),
+    'Last_Period_Flow_Counter':        SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='m³',    sc='m',  ec=None ),
+    'Last_Period_Flow_Counter_Gall':   SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='gal',   sc='m',  ec=None ),
+    'Last_Period_Energy_Counter':      SF(friendly='Previous month energy counter',        type='float',  scale=10,   unit='kWh',   sc='m',  ec=None ),
     'LastErrorOccurency':              SF(friendly='Last error occurency',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'LastErrorTimePowerOn':            SF(friendly='Last error time',                      type='int',    scale=1,    unit='h',     sc=None, ec='d'  ),
     'LatestError':                     SF(friendly='Latest error',                         type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
@@ -526,7 +558,7 @@ SENSOR_FIELDS = {
     'PO_OutputPower':                  SF(friendly='Output power (PO)',                    type='int',    scale=1,    unit='W',     sc='m',  ec=None ),
     'PR_RemotePressureSensor':         SF(friendly='Remote pressure sensor (PR)',          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'PanelBoardId':                    SF(friendly='Panel board id',                       type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PartialEnergy':                   SF(friendly='Partial energy',                       type='int',    scale=10,   unit='kWh',   sc=None, ec=None ),
+    'PartialEnergy':                   SF(friendly='Partial energy',                       type='float',  scale=10,   unit='kWh',   sc=None, ec=None ),
     'PowerShowerBoost':                SF(friendly='Power shower boost',                   type='int',    scale=1,    unit='%',     sc=None, ec='d'  ),
     'PowerShowerCommand':              SF(friendly='Power shower command',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'PowerShowerCountdown':            SF(friendly='Power shower countdown',               type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
@@ -542,8 +574,8 @@ SENSOR_FIELDS = {
     'RP_PressureFallToRestartBar':     SF(friendly='Pressure fall to restart (RP)',        type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
     'RP_PressureFallToRestartPsi':     SF(friendly='Pressure fall to restart (RP)',        type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
     'RS_RotatingSpeed':                SF(friendly='Rotation speed (RS)',                  type='int',    scale=1,    unit='rpm',   sc='m',  ec=None ),
-    'RamUsed':                         SF(friendly='Ram used',                             type='int',    scale=1,    unit='kB',    sc='m',  ec='d'  ),
-    'RamUsedMax':                      SF(friendly='Ram used max',                         type='int',    scale=1,    unit='kB',    sc='m',  ec='d'  ),
+    'RamUsed':                         SF(friendly='Ram used',                             type='float',  scale=1000, unit='kB',    sc='m',  ec='d'  ),
+    'RamUsedMax':                      SF(friendly='Ram used max',                         type='float',  scale=1000, unit='kB',    sc='m',  ec='d'  ),
     'RemotePressureSensorStatus':      SF(friendly='Remote pressure sensor status',        type='string', scale=1,    unit=None,    sc='m',  ec='d'  ),
     'RunningPumpsNumber':              SF(friendly='Running pumps number',                 type='int',    scale=1,    unit=None,    sc='m',  ec=None ),
     'Saving':                          SF(friendly='Saving',                               type='int',    scale=1,    unit=None,    sc=None, ec=None ),
@@ -565,7 +597,7 @@ SENSOR_FIELDS = {
     'TB_DryRunDetectTime':             SF(friendly='Dry run detect time (TB)',             type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
     'TE_HeatsinkTemperatureC':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°C',    sc='m',  ec=None ),
     'TE_HeatsinkTemperatureF':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°F',    sc='m',  ec=None ),
-    'TotalEnergy':                     SF(friendly='Total energy',                         type='int',    scale=10,   unit='kWh',   sc=None, ec=None ),
+    'TotalEnergy':                     SF(friendly='Total energy',                         type='float',  scale=10,   unit='kWh',   sc=None, ec=None ),
     'UpdateFirmware':                  SF(friendly='Firmware update',                      type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
     'UpdateProgress':                  SF(friendly='Update progress',                      type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'UpdateType':                      SF(friendly='Update type',                          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
@@ -589,7 +621,7 @@ SENSOR_FIELDS = {
     'IpExt':                           SF(friendly='External IP',                          type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
     'IpWlan':                          SF(friendly='Wlan IP',                              type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
     'MacWlan':                         SF(friendly='Wlan mac',                             type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'MemFree':                         SF(friendly='Memory free',                          type='float',  scale=1000, unit='MB',    sc='m',  ec=None ),
+    'MemFree':                         SF(friendly='Memory free',                          type='other',  scale=1,    unit='kB',    sc='m',  ec=None ),
     'ModbusBaudRate':                  SF(friendly='Modbus baudrate',                      type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
     'ModbusCountErrMsg':               SF(friendly='Modbus err msg count',                 type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
     'ModbusCountMsg':                  SF(friendly='Modbus msg count',                     type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
