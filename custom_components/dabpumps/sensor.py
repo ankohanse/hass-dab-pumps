@@ -83,14 +83,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
             _LOGGER.debug(f"Sensor fields list indicates to not create a sensor for '{status.key}' with value '{status.val}'.")
             continue
         
-        if not isinstance(field, SF):
+        if isinstance(field, SF):
+            # Instantiate a DabPumpsSensor
+            sensor = DabPumpsSensor(coordinator, install_id, object_id, status, device)
+            sensors.append(sensor)
+        else:
             # skip statusses that are not meant to become a sensor. Should be picked up by binary_sensor, switch...
             _LOGGER.debug(f"Sensor fields list indicates to not create an entity other than sensor for '{status.key}' with value '{status.val}'.")
             continue
         
-        # Instantiate a DabPumpsSensor
-        sensor = DabPumpsSensor(coordinator, install_id, object_id, status, device)
-        sensors.append(sensor)
     
     _LOGGER.info(f"Setup integration entry for installation '{install_name} with {len(device_map)} devices and {len(sensors)} sensors")
     if sensors:
@@ -247,6 +248,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'gal':     return SensorDeviceClass.WATER
             case 'l/m':     return None
             case 'gal/m':   return None
+            case 'mm':      return SensorDeviceClass.DISTANCE
+            case 'cm':      return SensorDeviceClass.DISTANCE
+            case 'in':      return SensorDeviceClass.DISTANCE
             case 's':       return SensorDeviceClass.DURATION
             case 'h':       return None
             case 'B':       return SensorDeviceClass.DATA_SIZE
@@ -273,6 +277,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'gal':     return 'mdi:water'
             case 'L/m':     return 'mdi:hydro-power'
             case 'gal/m':   return 'mdi:hydro-power'
+            case 'mm':      return 'mdi:waves-arrow-up'
+            case 'cm':      return 'mdi:waves-arrow-up'
+            case 'in':      return 'mdi:waves-arrow-up'
             case 's':       return 'mdi:timer-sand'
             case 'h':       return 'mdi:timer'
             case 'B':       return 'mdi:memory'
@@ -314,7 +321,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
                     '5': '4',
                 }
             
-            case 'AE_AntiLock' | 'AF_AntiFreeze' | 'CheckUpdates' | 'SleepModeEnable': 
+            case 'AE_AntiLock' | 'AF_AntiFreeze' | 'CheckUpdates' | 'FloatEnable' | 'SleepModeEnable': 
                 dict = {
                     '0': 'Disabled',
                     '1': 'Enabled',
@@ -329,8 +336,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             
             case 'FirmwareStatus': 
                 dict = {
-                    '0': 'Update available',
+                    '0': '--',
                     '1': 'Already updated',
+                    '2': 'Update available',
                 }
             
             case 'LA_Language': 
@@ -367,6 +375,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
                 dict = {
                     '0': 'StandBy',
                     '1': 'Go',
+                    '2': 'Fault',
                 }
             
             case 'SystemStatus':
@@ -378,6 +387,13 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
                 dict = {
                     '0': 'Inactive',
                     '1': 'Active',
+                }
+            
+            case 'FloatSwitchStatus': 
+                dict = {
+                    '0': 'Inactive',
+                    '1': 'Active',
+                    '255': 'No sensor',
                 }
             
             case 'ModbusBaudRate':
@@ -424,7 +440,8 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'WifiMode':
                 dict = {
                     '0': 'Operative',
-                    '1': 'Disconnected',
+                    '1': 'Configuration',
+                    '2': 'Disabled',
                 }
                 
             case 'WSstatus':
@@ -493,9 +510,9 @@ SENSOR_FIELDS = {
     #
     # Esybox / Esybox.mini
     #
-    'Actual_Period_Flow_Counter':      SF(friendly='Actual period flow counter',           type='int',    scale=1,    unit= 'L',    sc=None, ec=None ),
-    'Actual_Period_Flow_Counter_Gall': SF(friendly='Actual period flow counter',           type='int',    scale=1,    unit= 'gal',  sc=None, ec=None ),
-    'Actual_Period_Energy_Counter':    SF(friendly='Actual period energy counter',         type='int',    scale=1,    unit= 'kWh',  sc=None, ec=None ),
+    'Actual_Period_Flow_Counter':      SF(friendly='Actual period flow counter',           type='float',  scale=1000, unit= 'm³',   sc='ti', ec=None ),
+    'Actual_Period_Flow_Counter_Gall': SF(friendly='Actual period flow counter',           type='int',    scale=1,    unit= 'gal',  sc='ti', ec=None ),
+    'Actual_Period_Energy_Counter':    SF(friendly='Actual period energy counter',         type='float',  scale=10,   unit= 'kWh',  sc='ti', ec=None ),
     'AD_AddressConfig':                SF(friendly='Address config (AD)',                  type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
     'AE_AntiLock':                     SF(friendly='Anti lock (AE)',                       type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
     'AF_AntiFreeze':                   SF(friendly='Anti freeze (AF)',                     type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
@@ -513,6 +530,12 @@ SENSOR_FIELDS = {
     'FCt_Total_Delivered_Flow_mc':     SF(friendly='Total delived flow (FCt)',             type='float',  scale=1000, unit='m³',    sc='ti', ec=None ),
     'FaultPumpsNumber':                SF(friendly='Fault pumps number',                   type='int',    scale=1,    unit= None,   sc=None, ec='d'  ),
     'FirmwareStatus':                  SF(friendly='Firmware status',                      type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
+    'FloatEnable':                     SF(friendly='Float enabled',                        type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
+    'FloatSwitchStatus':               SF(friendly='Float switch status',                  type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
+    'FluidLevel':                      SF(friendly='Fluid level',                          type='float',  scale=10,   unit='cm',    sc='m',  ec=None ),
+    'FluidLevel_inch':                 SF(friendly='Fluid level',                          type='float',  scale=10,   unit='in',    sc='m',  ec=None ),
+    'Fluid_remain':                    SF(friendly='Fluid remaining',                      type='int',    scale=1,    unit='L',     sc='m',  ec=None ),
+    'Fluid_remain_inch':               SF(friendly='Fluid remaining',                      type='int',    scale=1,    unit='gal',   sc='m',  ec=None ),
     'GI_IntegralGainElasticPlant':     SF(friendly='Elastic plant integral gain (GI)',     type='float',  scale=10,   unit= None,   sc=None, ec=None ),
     'GI_IntegralGainRigidPlant':       SF(friendly='Rigid plant integral gain (GI)',       type='float',  scale=10,   unit= None,   sc=None, ec=None ),
     'GP_ProportionalGainElasticPlant': SF(friendly='Elastic plant proportional gain (GP)', type='float',  scale=10,   unit= None,   sc=None, ec=None ),
@@ -529,9 +552,9 @@ SENSOR_FIELDS = {
     'InverterPresentNumber':           SF(friendly='Inverter present number',              type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
     'KernelVersion':                   SF(friendly='Kernel version',                       type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'LA_Language':                     SF(friendly='Language (LA)',                        type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'Last_Period_Flow_Counter':        SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='m³',    sc='m',  ec=None ),
-    'Last_Period_Flow_Counter_Gall':   SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='gal',   sc='m',  ec=None ),
-    'Last_Period_Energy_Counter':      SF(friendly='Previous month energy counter',        type='float',  scale=10,   unit='kWh',   sc='m',  ec=None ),
+    'Last_Period_Flow_Counter':        SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='m³',    sc=None, ec=None ),
+    'Last_Period_Flow_Counter_Gall':   SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='gal',   sc=None, ec=None ),
+    'Last_Period_Energy_Counter':      SF(friendly='Previous month energy counter',        type='float',  scale=10,   unit='kWh',   sc=None, ec=None ),
     'LastErrorOccurency':              SF(friendly='Last error occurency',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
     'LastErrorTimePowerOn':            SF(friendly='Last error time',                      type='int',    scale=1,    unit='h',     sc=None, ec='d'  ),
     'LatestError':                     SF(friendly='Latest error',                         type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
@@ -578,7 +601,7 @@ SENSOR_FIELDS = {
     'RamUsedMax':                      SF(friendly='Ram used max',                         type='float',  scale=1000, unit='kB',    sc='m',  ec='d'  ),
     'RemotePressureSensorStatus':      SF(friendly='Remote pressure sensor status',        type='string', scale=1,    unit=None,    sc='m',  ec='d'  ),
     'RunningPumpsNumber':              SF(friendly='Running pumps number',                 type='int',    scale=1,    unit=None,    sc='m',  ec=None ),
-    'Saving':                          SF(friendly='Saving',                               type='int',    scale=1,    unit=None,    sc=None, ec=None ),
+    'Saving':                          SF(friendly='Saving',                               type='int',    scale=1,    unit='%',     sc=None, ec=None ),
     'SP_SetpointPressureBar':          SF(friendly='Setpoint pressure (SP)',               type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
     'SP_SetpointPressurePsi':          SF(friendly='Setpoint pressure (SP)',               type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
     'SleepModeEnable':                 SF(friendly='Sleep mode enable',                    type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
@@ -594,6 +617,13 @@ SENSOR_FIELDS = {
     'SystemStatus':                    SF(friendly='System status',                        type='string', scale=1,    unit=None,    sc=None, ec=None ),
     'T1_LowPressureDelay':             SF(friendly='Low pressure delay (T1)',              type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
     'T2_SwitchOffDelay':               SF(friendly='Switch off delay (T2)',                type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
+    'TankFill':                        SF(friendly='Tank fill',                            type='int',    scale=1,    unit='%',     sc='m',  ec=None ),
+    'TankMinLev':                      SF(friendly='Tank minimum level',                   type='int',    scale=1,    unit='cm',    sc=None, ec='d'  ),
+    'TankMinLev_inch':                 SF(friendly='Tank minimum level',                   type='int',    scale=2.54, unit='in',    sc=None, ec='d'  ),
+    'Tank_L1_D1':                      SF(friendly='Tank L1 D1',                           type='int',    scale=1,    unit='cm',    sc=None, ec='d'  ),
+    'Tank_L1_D1_inch':                 SF(friendly='Tank L1 D1',                           type='int',    scale=1,    unit='in',    sc=None, ec='d'  ),
+    'Tank_L2':                         SF(friendly='Tank L2',                              type='int',    scale=1,    unit='cm',    sc=None, ec='d'  ),
+    'Tank_L2_inch':                    SF(friendly='Tank L2',                              type='int',    scale=1,    unit='in',    sc=None, ec='d'  ),
     'TB_DryRunDetectTime':             SF(friendly='Dry run detect time (TB)',             type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
     'TE_HeatsinkTemperatureC':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°C',    sc='m',  ec=None ),
     'TE_HeatsinkTemperatureF':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°F',    sc='m',  ec=None ),
@@ -662,6 +692,7 @@ SENSOR_FIELDS = {
     'O1_Output1Function':              None,
     'O2_Output1Function':              None,
     'PW_ModifyPassword':               None,
+    'PumpStatusTime':                  None,
     'RecoverySTNumber':                None,
     'ResetActualFault':                None,
     'RF_EraseHistoricalFault':         None,
