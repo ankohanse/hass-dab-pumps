@@ -34,7 +34,12 @@ Therefore it is recommended to create a separate account within DAB Pumps DConne
 
 ### HACS
 
-1. Just search for "DAB Pumps" integration in HACS. It will be automatically installed to the `custom_integration/dabpumps` directory
+This custom integration is waiting to be included into the HACS default integrations.
+Until that time, you can add it as a HACS custom repository:
+1. In the HACS page, press the three dots at the top right corner.
+2. Select 'Custom Repositories'
+3. Enter repository "https://github.com/ankohanse/hass-dab-pumps" (with the quotes seems to work better)
+4. select category 'integration' and press 'Add'
 2. Restart Home Assistant.
 3. Follow the UI based [Configuration](#Configuration)
 
