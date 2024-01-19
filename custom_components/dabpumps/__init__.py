@@ -19,7 +19,7 @@ from homeassistant.const import (
 )
 
 from .coordinator import (
-    get_dabpumpscoordinator,
+    DabPumpsCoordinatorFactory,
     DabPumpsCoordinator
 )
 
@@ -28,6 +28,7 @@ from .const import (
     DOMAIN,
     API,
     COORDINATOR,
+    HELPER,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
 )
@@ -38,7 +39,8 @@ _LOGGER.info(STARTUP_MESSAGE)
 
 
 PLATFORMS: list[Platform] = [
-    Platform.SENSOR
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR
 ]
 
 
@@ -48,8 +50,9 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the component."""
     hass.data[DOMAIN] = {
-        API: {},        # key is username+hash(password)
-        COORDINATOR: {} # key is install_id
+        API: {},         # key is username+hash(password)
+        COORDINATOR: {}, # key is install_id
+        HELPER: {}       # key is install_id
     }
 
     for entry in hass.config_entries.async_entries(DOMAIN):
@@ -69,11 +72,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     install_id = config_entry.data[CONF_INSTALL_ID]
     install_name = config_entry.data[CONF_INSTALL_NAME]
     options = config_entry.options
-
-    _LOGGER.debug(f"Setup config entry for installation '{install_name}' ({install_id})")
-
+    
+    _LOGGER.info(f"Setup config entry for installation '{install_name}' ({install_id})")
+    
     # Get an instance of the DabPumpsCoordinator for this install_id
-    coordinator = get_dabpumpscoordinator(hass, config_entry)
+    coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
     
     # Fetch initial data so we have data when entities subscribe
     #

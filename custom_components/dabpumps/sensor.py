@@ -10,6 +10,7 @@ from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
@@ -36,66 +37,28 @@ from .const import (
     CONF_OPTIONS,
 )
 
-from .coordinator import (
-    get_dabpumpscoordinator,
-    DabPumpsCoordinator
+from .helper import (
+    DabPumpsHelperFactory,
+    DabPumpsHelper
 )
 
 
 _LOGGER = logging.getLogger(__name__)
 
 
-# Setting up the adding and updating of sensor entities
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
+    """
+    Setting up the adding and updating of sensor entities
+    """
+    helper = DabPumpsHelperFactory.create(hass, config_entry)
+    await helper.async_setup_entry(Platform.SENSOR, create_entity, async_add_entities)
 
-    install_id = config_entry.data[CONF_INSTALL_ID]
-    install_name = config_entry.data[CONF_INSTALL_NAME]
-    options = config_entry.data.get(CONF_OPTIONS, {})
 
-    # Get an instance of the DabPumpsCoordinator for this install_id
-    coordinator = get_dabpumpscoordinator(hass, config_entry)
-    (device_map, status_map) = coordinator.data
-
-    if not device_map or not status_map:
-        # If data returns False or is empty, log an error and return
-        _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
-        return
-    
-    _LOGGER.debug(f"Create sensors for installation '{install_name}' ({install_id})")
-    
-    # Iterate all statusses to create sensor entities
-    sensors = []
-    for object_id, status in status_map.items():
-        
-        # skip statusses that are not associated with a device in this installation
-        device = device_map.get(status.serial, None)
-        if not device or device.install_id != install_id:
-            continue
-
-        # only process statusses that we know can be transformed into a sensor
-        if status.key not in SENSOR_FIELDS.keys():
-            _LOGGER.warning(f"Sensor fields list holds no info to create a sensor for '{status.key}' with value '{status.val}'. You may want to ask the maintainer of this custom integration to add it.")
-            continue
-        
-        field = SENSOR_FIELDS[status.key]
-        if not field:
-            # Some statusses (error1...error64) are deliberately skipped
-            _LOGGER.debug(f"Sensor fields list indicates to not create a sensor for '{status.key}' with value '{status.val}'.")
-            continue
-        
-        if isinstance(field, SF):
-            # Instantiate a DabPumpsSensor
-            sensor = DabPumpsSensor(coordinator, install_id, object_id, status, device)
-            sensors.append(sensor)
-        else:
-            # skip statusses that are not meant to become a sensor. Should be picked up by binary_sensor, switch...
-            _LOGGER.debug(f"Sensor fields list indicates to not create an entity other than sensor for '{status.key}' with value '{status.val}'.")
-            continue
-        
-    
-    _LOGGER.info(f"Setup integration entry for installation '{install_name} with {len(device_map)} devices and {len(sensors)} sensors")
-    if sensors:
-        async_add_entities(sensors)
+def create_entity(coordinator, install_id, object_id, device, params, status):
+    """
+    Create a new DabPumpsSensor instance
+    """
+    return DabPumpsSensor(coordinator, install_id, object_id, device, params, status)
 
 
 class DabPumpsSensor(CoordinatorEntity, SensorEntity):
@@ -104,10 +67,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
     
     Could be a sensor that is part of a pump like ESybox, Esybox.mini
     Or could be part of a communication module like DConnect Box/Box2
-    
     """
     
-    def __init__(self, coordinator, install_id, object_id, status, device) -> None:
+    def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
         """ Initialize the sensor. """
         super().__init__(coordinator)
         
@@ -118,10 +80,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         
         self._coordinator = coordinator
         self._device = device
-        self._status = status
         
         # Create all attributes
-        self._update_attributes(device, status, True)
+        self._update_attributes(device, params, status, True)
     
     
     @property
@@ -147,69 +108,76 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         """Handle updated data from the coordinator."""
         super()._handle_coordinator_update()
         
-        (device_map, status_map) = self._coordinator.data
+        (device_map, config_map, status_map) = self._coordinator.data
         
         # find the correct device and status corresponding to this sensor
-        device = device_map.get(self._device.serial, None)
-        status = status_map.get(self.object_id, None)
-        
+        device = device_map.get(self._device.serial)
+        config = config_map.get(self._device.config_id) or {}
+        status = status_map.get(self.object_id)
+        params = config.meta_params.get(status.key) or {}
+
         # Update any attributes
-        if device and status:
-            if self._update_attributes(device, status, False):
+        if device and params and status:
+            if self._update_attributes(device, params, status, False):
                 self.async_write_ha_state()
     
     
-    def _update_attributes(self, device, status, is_create):
+    def _update_attributes(self, device, params, status, is_create):
         
-        # Lookup the definition for this status/sensor
-        field = SENSOR_FIELDS.get(status.key, None)
-        if not field:
-            return False
-        
-        # Transform values according to the definition
-        match (field.type):
-            case 'float': 
-                field_precision = int(math.floor(math.log10(field.scale)))
-                field_val = round(float(status.val) / field.scale, field_precision)
-                field_unit = field.unit
-            case 'int':    
-                field_precision = 0
-                field_val = int(round(float(status.val) / field.scale, 0))
-                field_unit = field.unit
+        # Transform values according to the metadata params for this status/sensor
+        match params.type:
+            case 'measure':
+                if params.weight and params.weight != 1 and params.weight != 0:
+                    # Convert to float
+                    attr_precision = int(math.floor(math.log10(1.0 / params.weight)))
+                    attr_unit = self._convert_to_unit(params)
+                    attr_val = round(float(status.val) * params.weight, attr_precision)
+                else:
+                    # Convert to int
+                    attr_precision = 0
+                    attr_unit = self._convert_to_unit(params)
+                    attr_val = int(status.val)
+                    
             case 'enum':
-                (field_precision, field_val, field_unit) = self._get_enum_value(field, status.key, status.val)
-            case 'other': 
-                (field_precision, field_val, field_unit) = self._get_other_value(field, status.key, status.val)
-            case 'string' | _: 
-                field_precision = None
-                field_val = str(status.val)
-                field_unit = field.unit
-                
+                # Lookup the dict string for the value and otherwise return the value itself
+                attr_precision = None
+                attr_unit = None
+                attr_val = self._get_string(params.values.get(status.val, status.val))
+
+            case 'label' | _:
+                if params.type != 'label':
+                    _LOGGER.warn(f"DAB Pumps encountered an unknown sensor type '{params.type}'. Please contact the integration developer to have this resolved.")
+                    
+                # Convert to string
+                attr_precision = None
+                attr_unit = self._convert_to_unit(params) or None
+                attr_val = self._get_string(str(status.val))
+        
         # Process any changes
         changed = False
         
         # update creation-time only attributes
         if is_create:
-            _LOGGER.debug(f"Create sensor '{field.friendly}' ({status.unique_id})")
-
+            _LOGGER.debug(f"Create sensor '{status.key}' ({status.unique_id})")
+            
             self._attr_unique_id = status.unique_id
             
             self._attr_has_entity_name = True
-            self._attr_name = field.friendly
+            self._attr_name = self._get_string(status.key)
             self._name = status.key
             
-            self._attr_state_class = self._get_state_class(field)
-            self._attr_device_class = self._get_device_class(field) 
-            self._attr_entity_category = self._get_entity_category(field)
+            self._attr_state_class = self._get_state_class(params)
+            self._attr_entity_category = self._get_entity_category(params)
+            self._attr_device_class = self._get_device_class(params, attr_unit) 
             changed = True
-
+        
         # update value if it has changed
-        if is_create or self._attr_native_value != field_val:
-            self._attr_native_value = field_val
-            self._attr_native_unit_of_measurement = field_unit
-            self._attr_suggested_display_precision = field_precision
-
-            self._attr_icon = self._get_icon(field, field_val)
+        if is_create or self._attr_native_value != attr_val:
+            self._attr_native_value = attr_val
+            self._attr_native_unit_of_measurement = attr_unit
+            self._attr_suggested_display_precision = attr_precision
+            
+            self._attr_icon = self._get_icon(params, attr_unit)
             changed = True
             
         # update device info if it has changed
@@ -234,11 +202,57 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
         return changed
     
     
-    def _get_device_class(self, field):
-        if field.type == 'enum':
+    def _get_string(self, str):
+        # return 'translated' string or original string if not found
+        return self._coordinator.string_map.get(str, str)
+
+    
+    def _convert_to_unit(self, params):
+        """Convert from DAB Pumps units to Home Assistant units"""
+        match params.unit:
+            case '°C':          return '°C' 
+            case '°F':          return '°F'
+            case 'bar':         return 'bar'
+            case 'psi':         return 'psi'
+            case 'mc':          return 'm³'
+            case 'l':           return 'L'
+            case 'l/min':       return 'L/m'
+            case 'gall':        return 'gal'
+            case 'gall/min':    return 'gal/m'
+            case 'gpm':         return 'gal/m'
+            case 'cm':          return 'cm'
+            case 'inch':        return 'in'
+            case 'ms':          return 'ms'
+            case 's':           return 's'
+            case 'secondi':     return 's'
+            case 'h':           return 'h'
+            case 'rpm':         return 'rpm'
+            case 'B':           return 'B'
+            case 'kB':          return 'kB'
+            case 'KB':          return 'kB'
+            case 'MByte':       return 'MB'
+            case '%':           return '%'
+            case 'V':           return 'V'
+            case 'A':           return 'A'
+            case 'kW':          return 'kW'
+            case 'kWh':         return 'kWh'
+            case 'Address':     return None
+            case 'SW. Vers.':   return None
+            case '':            return None
+            case 'None' | None: return None
+            
+            case _:
+                _LOGGER.warn(f"DAB Pumps encountered a unit or measurement '{unit}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
+                return unit
+        
+        
+    
+    def _get_device_class(self, params, attr_unit):
+        """Convert from HA unit to SensorDeviceClass"""
+        if params.type == 'enum':
             return SensorDeviceClass.ENUM
             
-        match field.unit:
+        match attr_unit:
             case '°C':      return SensorDeviceClass.TEMPERATURE
             case '°F':      return SensorDeviceClass.TEMPERATURE
             case 'bar':     return SensorDeviceClass.PRESSURE
@@ -266,8 +280,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case _:         return None
     
     
-    def _get_icon(self, field, field_val):
-        match field.unit:
+    def _get_icon(self, params, attr_unit):
+        """Convert from HA unit to icon"""
+        match attr_unit:
             case '°C':      return 'mdi:thermometer'
             case '°F':      return 'mdi:thermometer'
             case 'bar':     return 'mdi:water-pump'
@@ -295,493 +310,96 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case _:         return None
     
     
-    def _get_state_class(self, field):
-        match field.sc:
-            case 'm':       return SensorStateClass.MEASUREMENT
-            case 't':       return SensorStateClass.TOTAL
-            case 'ti':      return SensorStateClass.TOTAL_INCREASING
-            case _:         return None
-    
-    
-    def _get_entity_category(self, field):
-        match field.ec:
-            case 'd':       return EntityCategory.DIAGNOSTIC
-            case 'c':       return EntityCategory.CONFIG
-            case _:         return None
-    
-    
-    def _get_enum_value(self, field, status_key, status_val):
-        match status_key:
-            case 'AD_AddressConfig': 
-                dict = {
-                    '1': 'Automatic',
-                    '2': '1',
-                    '3': '2',
-                    '4': '3',
-                    '5': '4',
-                }
+    def _get_state_class(self, params):
+        # Return StateClass=None for Enum or Label
+        if params.type != 'measure':
+            return None
             
-            case 'AE_AntiLock' | 'AF_AntiFreeze' | 'CheckUpdates' | 'FloatEnable' | 'SleepModeEnable': 
-                dict = {
-                    '0': 'Disabled',
-                    '1': 'Enabled',
-                }
+        # Return StateClass=None for params that are a setting, unlikely to change often
+        if params.change:
+            return None
             
-            case 'AY_AntiCycling': 
-                dict = {
-                    '0': 'Disabled',
-                    '1': 'Enabled',
-                    '2': 'Smart',
-                }
+        # Return StateClass=None for diagnostics kind of parameters
+        groups_none = ['Modbus', 'Extra Comfort']
+        if params.group in groups_none:
+            return None
             
-            case 'FirmwareStatus': 
-                dict = {
-                    '0': '--',
-                    '1': 'Already updated',
-                    '2': 'Update available',
-                }
-            
-            case 'LA_Language': 
-                dict = {
-                    '0': 'Italian',
-                    '1': 'English',
-                    '2': 'French',
-                    '3': 'German',
-                    '4': 'Spanish',
-                    '5': 'Dutch',
-                    '6': 'Swedish',
-                    '7': 'Turkish',
-                    '8': 'Slovenian',
-                    '9': 'Romanian',
-                    '10': 'Chech',
-                    '11': 'Polish',
-                    '12': 'Russian',
-                    '13': 'Thai',
-                }
-            
-            case 'MS_MeasureSystem': 
-                dict = {
-                    '0': 'International',
-                    '1': 'Imperial',
-                }
-            
-            case 'OD_PlantType': 
-                dict = {
-                    '0': 'Elastic',
-                    '1': 'Rigid',
-                }
-            
-            case 'PumpStatus': 
-                dict = {
-                    '0': 'StandBy',
-                    '1': 'Go',
-                    '2': 'Fault',
-                }
-            
-            case 'SystemStatus':
-                dict = {
-                    '0': 'Ok'
-                }
-            
-            case 'In1' | 'Out1': 
-                dict = {
-                    '0': 'Inactive',
-                    '1': 'Active',
-                }
-            
-            case 'FloatSwitchStatus': 
-                dict = {
-                    '0': 'Inactive',
-                    '1': 'Active',
-                    '255': 'No sensor',
-                }
-            
-            case 'ModbusBaudRate':
-                dict = {
-                    '0': '1200 bit/s',
-                    '1': '2400 bit/s',
-                    '2': '4800 bit/s',
-                    '3': '9600 bit/s',
-                    '4': '19200 bit/s',
-                    '5': '38400 bit/s',
-                }
-                
-            case 'ModbusParity':
-                dict = {
-                    '0': 'No parity',
-                    '1': 'Even parity',
-                    '2': 'Odd parity',
-                }
-                
-            case 'ModbusStopBit':
-                dict = {
-                    '1': '1 bit',
-                    '2': '2 bit',
-                }
-            
-            case 'PLCStatus':
-                dict = {
-                    '0': 'Associated',
-                    '1': 'Not associated',
-                }
-                
-            case 'PLCUpdatingStatus':
-                dict = {
-                    '0': 'Not updating',
-                    '1': 'Updating',
-                }
-                
-            case 'SampleRate':
-                dict = {
-                    '0': '20 seconds',
-                    '1': '5 seconds',
-                }
-            
-            case 'WifiMode':
-                dict = {
-                    '0': 'Operative',
-                    '1': 'Configuration',
-                    '2': 'Disabled',
-                }
-                
-            case 'WSstatus':
-                dict = {
-                }
-
-            case _: dict = {}
-
-        # lookup the dict string for the value and otherwise return the value itself
-        field_precision = None
-        field_val = dict.get(status_val, status_val)
-        field_unit = None
+        keys_t = []
+        keys_ti = [
+            'Actual_Period_Flow_Counter',
+            'Actual_Period_Flow_Counter_Gall',
+            'Actual_Period_Energy_Counter',
+            'FCp_Partial_Delivered_Flow_Gall',
+            'FCp_Partial_Delivered_Flow_mc',
+            'FCt_Total_Delivered_Flow_Gall',
+            'FCt_Total_Delivered_Flow_mc',
+            'HO_PowerOnHours',
+            'HO_PumpRunHours',
+            'SO_PowerOnSeconds',
+            'SO_PumpRunSeconds',
+            'StartNumber',
+            'UpTime',
+            'WlanRx',
+            'WlanTx',
+        ]
         
-        return (field_precision, field_val, field_unit)
-
-
-    def _get_other_value(self, field, status_key, status_val):
-        """Handling of special cases, that may behave different depending on product"""
-        
-        field_precision = None
-        field_val = status_val
-        
-        match status_key:
-            case 'TE_HeatsinkTemperatureC' | 'TE_HeatsinkTemperatureF':
-                if '_mini_' in self._device.product:
-                    # '208' becomes 20.8
-                    field_precision = 1
-                    field_val = round(float(status_val) / 10.0, 1)
-                else:
-                    # '22' becomes 22
-                    field_precision = 0
-                    field_val = int(round(float(status_val), 0))
-                field_unit = '°C' if status_key=='TE_HeatsinkTemperatureC' else '°F'
+        if params.key in keys_t:
+            return SensorStateClass.TOTAL
             
-            case 'MemFree':
-                if '_mini_' in self._device.product:
-                    field_precision = 0
-                    field_val = int(round(float(status_val), 0))
-                    field_unit = 'B'
-                else:
-                    field_precision = 0
-                    field_val = int(round(float(status_val), 0))
-                    field_unit = 'kB'
-
-            case 'RamUsed' | 'RamUsedMax':
-                if '_mini_' in self._device.product:
-                    field_precision = 1
-                    field_val = round(float(status_val) * 0.0009765625, 1)
-                    field_unit = 'kB'
-                else:
-                    field_precision = 1
-                    field_val = round(float(status_val), 1)
-                    field_unit = '%'
-
-        return (field_precision, field_val, field_unit)
-
-
-#
-# Below follows the knowledgebase of all known sensor fields.
-# Add new field definitions when needed.
-#
-# A limited number of fields (error1...error64) are deliberately left out of this list
-#
-SF = namedtuple('SF', 'friendly, type, scale, unit, sc, ec')
-SENSOR_FIELDS = {
-    #
-    # Esybox / Esybox.mini
-    #
-    'Actual_Period_Flow_Counter':      SF(friendly='Actual period flow counter',           type='float',  scale=1000, unit= 'm³',   sc='ti', ec=None ),
-    'Actual_Period_Flow_Counter_Gall': SF(friendly='Actual period flow counter',           type='int',    scale=1,    unit= 'gal',  sc='ti', ec=None ),
-    'Actual_Period_Energy_Counter':    SF(friendly='Actual period energy counter',         type='float',  scale=10,   unit= 'kWh',  sc='ti', ec=None ),
-    'AD_AddressConfig':                SF(friendly='Address config (AD)',                  type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'AE_AntiLock':                     SF(friendly='Anti lock (AE)',                       type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'AF_AntiFreeze':                   SF(friendly='Anti freeze (AF)',                     type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'AY_AntiCycling':                  SF(friendly='Anti cycling (AY)',                    type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'ActiveInverterNumber':            SF(friendly='Active inverter number',               type='int',    scale=1,    unit= None,   sc=None, ec=None ),
-    'C1_PumpPhaseCurrent':             SF(friendly='Pump phase current (C1)',              type='float',  scale=10,   unit='A',     sc='m',  ec=None ),
-    'ContemporaryInverterNumber':      SF(friendly='Contemporary Inverter number',         type='int',    scale=1,    unit= None,   sc=None, ec=None ),
-    'DPlusVersion':                    SF(friendly='DPlus version',                        type='string', scale=1,    unit= None,   sc=None, ec='d'  ),
-    'EK_LowPressureEnable':            SF(friendly='Low pressure enable (EK)',             type='int',    scale=1,    unit= None,   sc=None, ec='d'  ),
-    'ET_ExchangeTime':                 SF(friendly='Exchange time (ET)',                   type='int',    scale=1,    unit= None,   sc=None, ec=None ),
-    'FactoryDefault':                  SF(friendly='Factory default',                      type='int',    scale=1,    unit= None,   sc=None, ec=None ),
-    'FCp_Partial_Delivered_Flow_Gall': SF(friendly='Partial Delived Flow (FCp)',           type='int',    scale=1,    unit='gal',   sc='ti', ec=None ),
-    'FCp_Partial_Delivered_Flow_mc':   SF(friendly='Partial delived flow (FCp)',           type='float',  scale=1000, unit='m³',    sc='ti', ec=None ),
-    'FCt_Total_Delivered_Flow_Gall':   SF(friendly='Total delived flow (FCt)',             type='int',    scale=1,    unit='gal' ,  sc='ti', ec=None ),
-    'FCt_Total_Delivered_Flow_mc':     SF(friendly='Total delived flow (FCt)',             type='float',  scale=1000, unit='m³',    sc='ti', ec=None ),
-    'FaultPumpsNumber':                SF(friendly='Fault pumps number',                   type='int',    scale=1,    unit= None,   sc=None, ec='d'  ),
-    'FirmwareStatus':                  SF(friendly='Firmware status',                      type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'FloatEnable':                     SF(friendly='Float enabled',                        type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'FloatSwitchStatus':               SF(friendly='Float switch status',                  type='enum',   scale=1,    unit= None,   sc=None, ec='d'  ),
-    'FluidLevel':                      SF(friendly='Fluid level',                          type='float',  scale=10,   unit='cm',    sc='m',  ec=None ),
-    'FluidLevel_inch':                 SF(friendly='Fluid level',                          type='float',  scale=10,   unit='in',    sc='m',  ec=None ),
-    'Fluid_Remain':                    SF(friendly='Fluid remaining',                      type='int',    scale=1,    unit='L',     sc='m',  ec=None ),
-    'Fluid_Remain_inch':               SF(friendly='Fluid remaining',                      type='int',    scale=1,    unit='gal',   sc='m',  ec=None ),
-    'GI_IntegralGainElasticPlant':     SF(friendly='Elastic plant integral gain (GI)',     type='float',  scale=10,   unit= None,   sc=None, ec=None ),
-    'GI_IntegralGainRigidPlant':       SF(friendly='Rigid plant integral gain (GI)',       type='float',  scale=10,   unit= None,   sc=None, ec=None ),
-    'GP_ProportionalGainElasticPlant': SF(friendly='Elastic plant proportional gain (GP)', type='float',  scale=10,   unit= None,   sc=None, ec=None ),
-    'GP_ProportionalGainRigidPlant':   SF(friendly='Rigid plant proportional gain (GP)',   type='float',  scale=10,   unit= None,   sc=None, ec=None ),
-    'GroupFlowGall':                   SF(friendly='Group flow',                           type='int',    scale=10,   unit='gal/m', sc='m',  ec=None ),
-    'GroupFlowLiter':                  SF(friendly='Group flow',                           type='int',    scale=10,   unit='L/m',   sc='m',  ec=None ),
-    'GroupPower':                      SF(friendly='Group power',                          type='int',    scale=1,    unit='W',     sc='m',  ec=None ),
-    'HO_PowerOnHours':                 SF(friendly='Working hours (HO)',                   type='int',    scale=1,    unit='h',     sc='ti', ec=None ),
-    'HO_PumpRunHours':                 SF(friendly='Pump running hours (HO)',              type='int',    scale=1,    unit='h',     sc='ti', ec=None ),
-    'HvBoardId':                       SF(friendly='Hv board id',                          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'HvFwVersion':                     SF(friendly='Hv firmware version',                  type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'HvVersion':                       SF(friendly='Hv version',                           type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'IC_InverterConfig':               SF(friendly='Inverter config (IC)',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'InverterPresentNumber':           SF(friendly='Inverter present number',              type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
-    'KernelVersion':                   SF(friendly='Kernel version',                       type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'LA_Language':                     SF(friendly='Language (LA)',                        type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'Last_Period_Flow_Counter':        SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='m³',    sc=None, ec=None ),
-    'Last_Period_Flow_Counter_Gall':   SF(friendly='Previous month flow counter',          type='float',  scale=1000, unit='gal',   sc=None, ec=None ),
-    'Last_Period_Energy_Counter':      SF(friendly='Previous month energy counter',        type='float',  scale=10,   unit='kWh',   sc=None, ec=None ),
-    'LastErrorOccurency':              SF(friendly='Last error occurency',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'LastErrorTimePowerOn':            SF(friendly='Last error time',                      type='int',    scale=1,    unit='h',     sc=None, ec='d'  ),
-    'LatestError':                     SF(friendly='Latest error',                         type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'LvFwVersion':                     SF(friendly='Lv firmware version',                  type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'LvVersion':                       SF(friendly='Lv version',                           type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'MS_MeasureSystem':                SF(friendly='Measure system (MS)',                  type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'MainloopMaxTime':                 SF(friendly='Main loop max time',                   type='int',    scale=1,    unit=None,    sc='m',  ec='d'  ),
-    'MainloopMinTime':                 SF(friendly='Main loop min time',                   type='int',    scale=1,    unit=None,    sc='m',  ec='d'  ),
-    'NA_ActiveInverters':              SF(friendly='Active inverters (NA)',                type='int',    scale=1,    unit=None,    sc=None, ec=None ),
-    'NA_ActiveContemporaryInverters':  SF(friendly='Active contemporary inverters (NC)',   type='int',    scale=1,    unit=None,    sc=None, ec=None ),
-    'OD_PlantType':                    SF(friendly='Plant type (OD)',                      type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'P1_Aux1SetpointBar':              SF(friendly='Aux1 setpoint (P1)',                   type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'P1_Aux1SetpointPsi':              SF(friendly='Aux1 setpoint (P1)',                   type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
-    'P1_Aux2SetpointBar':              SF(friendly='Aux2 setpoint (P2)',                   type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'P1_Aux2SetpointPsi':              SF(friendly='Aux2 setpoint (P2)',                   type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
-    'P1_Aux3SetpointBar':              SF(friendly='Aux3 setpoint (P3)',                   type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'P1_Aux3SetpointPsi':              SF(friendly='Aux3 setpoint (P3)',                   type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
-    'P1_Aux4SetpointBar':              SF(friendly='Aux4 setpoint (P4)',                   type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'P1_Aux4SetpointPsi':              SF(friendly='Aux4 setpoint (P4)',                   type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
-    'PK_LowPressureThresholdBar':      SF(friendly='Low pressure threshold (PK)',          type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'PK_LowPressureThresholdPsi':      SF(friendly='Low pressure threshold (PK)',          type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
-    'PKm_SuctionPressureBar':          SF(friendly='Suction pressure (PKm)',               type='float',  scale=10,   unit='bar',   sc='m',  ec=None ),
-    'PKm_SuctionPressurePsi':          SF(friendly='Suction pressure (PKm)',               type='float',  scale=1,    unit='psi',   sc='m',  ec=None ),
-    'PO_OutputPower':                  SF(friendly='Output power (PO)',                    type='int',    scale=1,    unit='W',     sc='m',  ec=None ),
-    'PR_RemotePressureSensor':         SF(friendly='Remote pressure sensor (PR)',          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PanelBoardId':                    SF(friendly='Panel board id',                       type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PartialEnergy':                   SF(friendly='Partial energy',                       type='float',  scale=10,   unit='kWh',   sc=None, ec=None ),
-    'PowerShowerBoost':                SF(friendly='Power shower boost',                   type='int',    scale=1,    unit='%',     sc=None, ec='d'  ),
-    'PowerShowerCommand':              SF(friendly='Power shower command',                 type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PowerShowerCountdown':            SF(friendly='Power shower countdown',               type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'PowerShowerDuration':             SF(friendly='Power shower duration',                type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'PowerShowerPressureBar':          SF(friendly='Power shower pressure',                type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'PowerShowerPressurePsi':          SF(friendly='Power shower pressure',                type='float',  scale=10,   unit='psi',   sc=None, ec='d'  ),
-    'PressureTarget':                  SF(friendly='Pressure target',                      type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
-    'ProductType':                     SF(friendly='Product type',                         type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'ProductSerialNumber':             SF(friendly='Product serial number',                type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PumpDisable':                     SF(friendly='Pump disable',                         type='string', scale=1,    unit=None,    sc='m',  ec='d'  ),
-    'PumpStatus':                      SF(friendly='Pump status',                          type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-    'RM_MaximumSpeed':                 SF(friendly='Maximum speed (RM)',                   type='int',    scale=1,    unit='rpm',   sc=None, ec='d'  ),
-    'RP_PressureFallToRestartBar':     SF(friendly='Pressure fall to restart (RP)',        type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'RP_PressureFallToRestartPsi':     SF(friendly='Pressure fall to restart (RP)',        type='float',  scale=10,   unit='psi',   sc=None, ec='d'  ),
-    'RS_RotatingSpeed':                SF(friendly='Rotation speed (RS)',                  type='int',    scale=1,    unit='rpm',   sc='m',  ec=None ),
-    'RamUsed':                         SF(friendly='Ram used',                             type='float',  scale=1000, unit='kB',    sc='m',  ec='d'  ),
-    'RamUsedMax':                      SF(friendly='Ram used max',                         type='float',  scale=1000, unit='kB',    sc='m',  ec='d'  ),
-    'RemotePressureSensorStatus':      SF(friendly='Remote pressure sensor status',        type='string', scale=1,    unit=None,    sc='m',  ec='d'  ),
-    'RunningPumpsNumber':              SF(friendly='Running pumps number',                 type='int',    scale=1,    unit=None,    sc='m',  ec=None ),
-    'Saving':                          SF(friendly='Saving',                               type='int',    scale=1,    unit='%',     sc=None, ec=None ),
-    'SP_SetpointPressureBar':          SF(friendly='Setpoint pressure (SP)',               type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'SP_SetpointPressurePsi':          SF(friendly='Setpoint pressure (SP)',               type='float',  scale=1,    unit='psi',   sc=None, ec='d'  ),
-    'SleepModeEnable':                 SF(friendly='Sleep mode enable',                    type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'SleepModeCountdown':              SF(friendly='Sleep mode countdown',                 type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'SleepModeDuration':               SF(friendly='Sleep mode duration',                  type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'SleepModePressureBar':            SF(friendly='Sleep mode pressure',                  type='float',  scale=10,   unit='bar',   sc=None, ec='d'  ),
-    'SleepModePressurePsi':            SF(friendly='Sleep mode pressure',                  type='float',  scale=10,   unit='psi',   sc=None, ec='d'  ),
-    'SleepModeReduction':              SF(friendly='Sleep mode reduction',                 type='int',    scale=1,    unit='%',     sc=None, ec='d'  ),
-    'SleepModeStartTime':              SF(friendly='Sleep mode start time',                type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'SO_PowerOnSeconds':               SF(friendly='Power on time (SO)',                   type='float',  scale=3600, unit='h',     sc='ti', ec=None ),
-    'SO_PumpRunSeconds':               SF(friendly='Pump run time (SO)',                   type='float',  scale=3600, unit='h',     sc='ti', ec=None ),
-    'StartNumber':                     SF(friendly='Starts number',                        type='int',    scale=1,    unit=None,    sc='ti', ec=None ),
-    'SystemStatus':                    SF(friendly='System status',                        type='string', scale=1,    unit=None,    sc=None, ec=None ),
-    'T1_LowPressureDelay':             SF(friendly='Low pressure delay (T1)',              type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'T2_SwitchOffDelay':               SF(friendly='Switch off delay (T2)',                type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'TankFill':                        SF(friendly='Tank fill',                            type='int',    scale=1,    unit='%',     sc='m',  ec=None ),
-    'TankMinLev':                      SF(friendly='Tank minimum level',                   type='int',    scale=1,    unit='cm',    sc=None, ec='d'  ),
-    'TankMinLev_inch':                 SF(friendly='Tank minimum level',                   type='int',    scale=2.54, unit='in',    sc=None, ec='d'  ),
-    'Tank_L1_D1':                      SF(friendly='Tank L1 D1',                           type='int',    scale=1,    unit='cm',    sc=None, ec='d'  ),
-    'Tank_L1_D1_inch':                 SF(friendly='Tank L1 D1',                           type='int',    scale=1,    unit='in',    sc=None, ec='d'  ),
-    'Tank_L2':                         SF(friendly='Tank L2',                              type='int',    scale=1,    unit='cm',    sc=None, ec='d'  ),
-    'Tank_L2_inch':                    SF(friendly='Tank L2',                              type='int',    scale=1,    unit='in',    sc=None, ec='d'  ),
-    'TB_DryRunDetectTime':             SF(friendly='Dry run detect time (TB)',             type='int',    scale=1,    unit='s',     sc=None, ec='d'  ),
-    'TE_HeatsinkTemperatureC':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°C',    sc='m',  ec=None ),
-    'TE_HeatsinkTemperatureF':         SF(friendly='Heatsink temperature (TE)',            type='other',  scale=1,    unit='°F',    sc='m',  ec=None ),
-    'TotalEnergy':                     SF(friendly='Total energy',                         type='float',  scale=10,   unit='kWh',   sc=None, ec=None ),
-    'UpdateFirmware':                  SF(friendly='Firmware update',                      type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
-    'UpdateProgress':                  SF(friendly='Update progress',                      type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'UpdateType':                      SF(friendly='Update type',                          type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'UpdateResult':                    SF(friendly='Update result',                        type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'VF_FlowGall':                     SF(friendly='Flow (VF)',                            type='float',  scale=10,   unit='gal/m', sc='m',  ec=None ),
-    'VF_FlowLiter':                    SF(friendly='Flow (VF)',                            type='float',  scale=10,   unit='L/m',   sc='m',  ec=None ),
-    'VP_PressureBar':                  SF(friendly='Pressure (VP)',                        type='float',  scale=10,   unit='bar',   sc='m',  ec=None ),
-    'VP_PressurePsi':                  SF(friendly='Pressure (VP)',                        type='float',  scale=1,    unit='psi',   sc='m',  ec=None ),
-    'WSstatus':                        SF(friendly='WS status',                            type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-     
-    # 
-    # DConnect Box2 (also parts for Esybox.mini)
-    #
-    'BootTime':                        SF(friendly='Boot time',                            type='float',  scale=3600, unit='h',     sc='m',  ec=None ),
-    'CheckUpdates':                    SF(friendly='Check updates',                        type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-    'CpuLoad':                         SF(friendly='Cpu load',                             type='int',    scale=1,    unit='%',     sc='m',  ec=None ),
-    'DabMgr':                          SF(friendly='Dab manager',                          type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'ESSID':                           SF(friendly='Wlan ESSID',                           type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'Image':                           SF(friendly='Image',                                type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'In1':                             SF(friendly='In1',                                  type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-    'IpExt':                           SF(friendly='External IP',                          type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'IpWlan':                          SF(friendly='Wlan IP',                              type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'MacWlan':                         SF(friendly='Wlan mac',                             type='string', scale=0,    unit=None,    sc=None, ec='d'  ),
-    'MemFree':                         SF(friendly='Memory free',                          type='other',  scale=1,    unit='kB',    sc='m',  ec=None ),
-    'ModbusBaudRate':                  SF(friendly='Modbus baudrate',                      type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'ModbusCountErrMsg':               SF(friendly='Modbus err msg count',                 type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
-    'ModbusCountMsg':                  SF(friendly='Modbus msg count',                     type='int',    scale=1,    unit=None,    sc=None, ec='d'  ),
-    'ModbusParity':                    SF(friendly='Modbus parity',                        type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'ModbusStopBit':                   SF(friendly='Modbus stop bit',                      type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'Out1':                            SF(friendly='Out1',                                 type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-    'PLCStatus':                       SF(friendly='PLC status',                           type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'PLCUpdatingStatus':               SF(friendly='PLC updating status',                  type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'SampleRate':                      SF(friendly='Sample rate',                          type='enum',   scale=1,    unit=None,    sc=None, ec='d'  ),
-    'SignLevel':                       SF(friendly='Wlan signal level',                    type='int',    scale=1,    unit='%',     sc='m',  ec=None ),
-    'SystemStatus':                    SF(friendly='System status',                        type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-    'SV_SupplyVoltage':                SF(friendly='Supply voltage (SV)',                  type='int',    scale=1,    unit='V',     sc=None, ec='d'  ),
-    'SR_SupplyVoltageRange':           SF(friendly='Supply voltage range (SR)',            type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'UpTime':                          SF(friendly='Up time',                              type='float',  scale=3600, unit='h',     sc='ti', ec=None ),
-    'UpdateSystem':                    SF(friendly='Update status',                        type='string', scale=1,    unit=None,    sc=None, ec='d'  ),
-    'WifiMode':                        SF(friendly='Wlan mode',                            type='enum',   scale=1,    unit=None,    sc=None, ec=None ),
-    'WlanRx':                          SF(friendly='Wlan data rx',                         type='float',  scale=1000, unit='MB',    sc='ti', ec=None ),
-    'WlanTx':                          SF(friendly='Wlan data tx',                         type='float',  scale=1000, unit='MB',    sc='ti', ec=None ),
-    'ucVersion':                       SF(friendly='Version uc',                           type='string', scale=0,    unit=None,    sc=None, ec='d', ),
+        elif params.key in keys_ti:
+            return SensorStateClass.TOTAL_INCREASING
+            
+        else:
+            return SensorStateClass.MEASUREMENT
     
-    # 
-    # Excluded
-    #
-    '5msHandlerMaxTime':               None,
-    '5msHandlerTime':                  None,
-    'BridgeTotalErrorTimeNumber':      None,
-    'ErasePartialEnergyCounter':       None,
-    'ErasePartialFlowCounter':         None,
-    'IdentifyDevice':                  None,
-    'I1_Input1Function':               None,
-    'I2_Input2Function':               None,
-    'I3_Input3Function':               None,
-    'I4_Input4Function':               None,
-    'LastErrorOccurrency':             None,
-    'MainLoopMaxTime':                 None,
-    'MainLoopMinTime':                 None,
-    'MainLoopTime':                    None,
-    'O1_Output1Function':              None,
-    'O2_Output1Function':              None,
-    'PW_ModifyPassword':               None,
-    'PumpStatusTime':                  None,
-    'RecoverySTNumber':                None,
-    'ResetActualFault':                None,
-    'RF_EraseHistoricalFault':         None,
-    'Device 1 Address':                None,
-    'Device 1 Identify':               None,
-    'Device 1 Serial':                 None,
-    'Device 1 Type':                   None,
-    'Device 2 Address':                None,
-    'Device 2 Identify':               None,
-    'Device 2 Serial':                 None,
-    'Device 2 Type':                   None,
-    'Device 3 Address':                None,
-    'Device 3 Identify':               None,
-    'Device 3 Serial':                 None,
-    'Device 3 Type':                   None,
-    'Device 4 Address':                None,
-    'Device 4 Identify':               None,
-    'Device 4 Serial':                 None,
-    'Device 4 Type':                   None,
-    'Error1':                          None,
-    'Error2':                          None,
-    'Error3':                          None,
-    'Error4':                          None,
-    'Error5':                          None,
-    'Error6':                          None,
-    'Error7':                          None,
-    'Error8':                          None,
-    'Error9':                          None,
-    'Error10':                         None,
-    'Error11':                         None,
-    'Error12':                         None,
-    'Error13':                         None,
-    'Error14':                         None,
-    'Error15':                         None,
-    'Error16':                         None,
-    'Error17':                         None,
-    'Error18':                         None,
-    'Error19':                         None,
-    'Error20':                         None,
-    'Error21':                         None,
-    'Error22':                         None,
-    'Error23':                         None,
-    'Error24':                         None,
-    'Error25':                         None,
-    'Error26':                         None,
-    'Error27':                         None,
-    'Error28':                         None,
-    'Error29':                         None,
-    'Error30':                         None,
-    'Error31':                         None,
-    'Error32':                         None,
-    'Error33':                         None,
-    'Error34':                         None,
-    'Error35':                         None,
-    'Error36':                         None,
-    'Error37':                         None,
-    'Error38':                         None,
-    'Error39':                         None,
-    'Error40':                         None,
-    'Error41':                         None,
-    'Error42':                         None,
-    'Error43':                         None,
-    'Error44':                         None,
-    'Error45':                         None,
-    'Error46':                         None,
-    'Error47':                         None,
-    'Error48':                         None,
-    'Error49':                         None,
-    'Error50':                         None,
-    'Error51':                         None,
-    'Error52':                         None,
-    'Error53':                         None,
-    'Error54':                         None,
-    'Error55':                         None,
-    'Error56':                         None,
-    'Error57':                         None,
-    'Error58':                         None,
-    'Error59':                         None,
-    'Error60':                         None,
-    'Error61':                         None,
-    'Error62':                         None,
-    'Error63':                         None,
-    'Error64':                         None,
-    'ErrorTime1':                      None,
-    'ErrorTime2':                      None,
-    'ErrorTime3':                      None,
-    'ErrorTime4':                      None,
-    'ErrorTime5':                      None,
-    'ErrorTime6':                      None,
-    'ErrorTime7':                      None,
-    'ErrorTime8':                      None,
-}
+    
+    def _get_entity_category(self, params):
+        
+        # Return None for some specific groups we always want as sensors 
+        # even if they would fail some of the tests below
+        groups_none = [
+            'I/O', 
+        ]
+        if params.group in groups_none:
+            return None
+            
+        # Return DIAGNOSTIC for params in groups associated with diagnostics
+        groups_diag = [
+            'Debug', 
+            'Errors',
+            'Extra Comfort', 
+            'Firmware Updates', 
+            'I/O', 
+            'Installer', 
+            'Modbus', 
+            'ModbusDevice', 
+            'PLC', 
+            'System Management',
+            'Technical Assistance',
+            'Version'
+        ]
+        if params.group in groups_diag:
+            return EntityCategory.DIAGNOSTIC
+            
+        # Return DIAGNOSTIC for some specific entries associated with others that are DIAGNOSTIC
+        keys_diag = [
+            'LastErrorOccurrency',
+            'LastErrorTimePowerOn',
+        ]
+        if params.key in keys_diag:
+            return EntityCategory.DIAGNOSTIC
+        
+        # Return DIAGNOSTIC for params that are a setting, unlikely to change often
+        # Note: we do not yet support EntityCategory.CONFIG
+        if params.change:
+            return EntityCategory.DIAGNOSTIC
+            
+        # Return DIAGNOSTIC for params that are not visible for Customer or Installer (i.e. only visible for Service or R&D)
+        if 'C' not in params.view and 'I' not in params.view:
+            return EntityCategory.DIAGNOSTIC
+        
+        if 'C' not in params.view and params.family == 'gear':
+            return EntityCategory.DIAGNOSTIC
+
+        # Return None for all others
+        return None

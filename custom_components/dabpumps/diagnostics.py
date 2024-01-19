@@ -27,7 +27,7 @@ from .const import (
 )
 
 from .coordinator import (
-    get_dabpumpscoordinator,
+    DabPumpsCoordinatorFactory,
     DabPumpsCoordinator,
 )
 
@@ -41,7 +41,7 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
     install_name = config_entry.data[CONF_INSTALL_NAME]
     _LOGGER.info(f"Retrieve diagnostics for install {install_name} ({install_id})")
     
-    coordinator: DabPumpsCoordinator = get_dabpumpscoordinator(hass, config_entry)
+    coordinator: DabPumpsCoordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
 
     return {
         "config": {

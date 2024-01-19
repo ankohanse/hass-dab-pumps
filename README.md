@@ -57,11 +57,13 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
     │   ├── translations
     │   │   └── en.json
     │   ├── __init__.py
+    │   ├── api.py
+    │   ├── binary_sensor.py
     │   ├── config_flow.py
     │   ├── const.py
     │   ├── coordinator.py
-    │   ├── dabpumpsapi.py
     │   ├── diagnostics.py
+    │   ├── helper.py
     │   ├── manifest.json
     │   ├── sensor.py
     │   └── strings.json  
@@ -72,8 +74,8 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
 
 ## Configuration
 
-The custom component was tested with a ESybox 1.5kw with firmware v5.29.0 combines with a DConnect Box 2 with firmware 7.03. 
-I expect it should also work for an ESybox Mini and probably also for other devices.
+The custom component was tested with a ESybox 1.5kw combined with a DConnect Box 2. 
+It has also been reported to function correctly for ESybox Mini and ESybox Diver.
 
 To start the setup of this custom integration:
 - go to Home Assistant's Integration Dashboard
@@ -119,5 +121,10 @@ logger:
 
 ## Credits
 
-Thank you for giving a great example of how to create a custom controller: [MindrustUK](https://github.com/MindrustUK)
+Special thanks to the following people for their testing and feedback on the first versions of this custom integration:
+- [Djavdeteg](https://github.com/Djavdeteg) on ESybox Mini 3
+- [Coldness00](https://github.com/Coldness00) on ESybox Mini 3
+- [benjaminmurray](https://github.com/benjaminmurray) on ESybox Mini 3
+- [Bascht74](https://github.com/Bascht74) on ESybox Diver (with fluid add-on)
+
 

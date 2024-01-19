@@ -12,12 +12,13 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2023.12.1"
+VERSION="2024.01.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"
 API = "Api"
 COORDINATOR = "Coordinator"
+HELPER = "Helper"
 
 DEFAULT_USERNAME = ""
 DEFAULT_PASSWORD = ""
@@ -42,6 +43,11 @@ ATTR_PRODUCT_VERSION = "Vendor Firmware Version"
 ATTR_PRODUCT_BUILD = "Vendor Product Build"
 ATTR_PRODUCT_FEATURES = "Vendor Product Features"
 ATTR_PRODUCT_INSTALL = "Installation Name"
+
+BINARY_SENSOR_VALUES_ON = ['1', 'active']
+BINARY_SENSOR_VALUES_OFF = ['0', 'disactive', 'inactive']
+BINARY_SENSOR_VALUES_ALL = BINARY_SENSOR_VALUES_ON + BINARY_SENSOR_VALUES_OFF
+
 
 DABPUMPS_API_URL = "https://dconnect.dabpumps.com"
 

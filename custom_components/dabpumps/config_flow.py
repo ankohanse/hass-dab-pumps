@@ -31,8 +31,8 @@ from .const import (
     CONF_POLLING_INTERVAL,
 )
 
-from .dabpumpsapi import (
-    get_dabpumpsapi,
+from .api import (
+    DabPumpsApiFactory,
     DabPumpsApi,
     DabPumpsApiError,
     DabPumpsApiAuthError,
@@ -61,7 +61,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Test the username and password by connecting to the DConnect website"""
         _LOGGER.info("Trying connection...")
         
-        dabpumpsapi = get_dabpumpsapi(None, self._username, self._password)
+        dabpumpsapi = DabPumpsApiFactory.create(None, self._username, self._password)
         try:
             # Call the DabPumpsApi with the detect_device method
             self._install_map = await dabpumpsapi.async_detect_installs()
@@ -114,14 +114,11 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Second step im config flow to choose which installation to use"""
         
         # if there is only one installation found, then automatically select it and skip display of form
-        if self._install_map:
-            _LOGGER.debug(f"install_map: {self._install_map}")
-            
-            if len(self._install_map)==1:
-                _LOGGER.info(f"Auto select the only installation available")
-                user_input = {
-                    CONF_INSTALL_NAME: next( (install.name for install in self._install_map.values()), None)
-                }
+        if self._install_map and len(self._install_map)==1:
+            _LOGGER.info(f"Auto select the only installation available")
+            user_input = {
+                CONF_INSTALL_NAME: next( (install.name for install in self._install_map.values()), None)
+            }
         
         if user_input is not None:
             _LOGGER.debug(f"Config flow handle installation input")
