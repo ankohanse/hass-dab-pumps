@@ -1,4 +1,4 @@
-"""resolapi.py: DabPumps API for DAB Pumps integration."""
+"""api.py: DabPumps API for DAB Pumps integration."""
 
 import asyncio
 import hashlib
@@ -76,7 +76,7 @@ DabPumpsStatus = namedtuple('DabPumpsStatus', 'serial, unique_id, key, val')
 DabPumpsMessages = namedtuple('DabPumpsMessages', 'key, val')
 
 
-# DabPumpsAPI to detect device and get device info, fetch the actual data from the Resol device, and parse it
+# DabPumpsAPI to detect device and get device info, fetch the actual data from the DAB Pumps website, and parse it
 class DabPumpsApi:
     def __init__(self, username, password):
         self._username = username

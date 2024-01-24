@@ -146,7 +146,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
 
             case 'label' | _:
                 if params.type != 'label':
-                    _LOGGER.warn(f"DAB Pumps encountered an unknown sensor type '{params.type}'. Please contact the integration developer to have this resolved.")
+                    _LOGGER.warn(f"DAB Pumps encountered an unknown sensor type '{params.type}' for '{params.key}'. Please contact the integration developer to have this resolved.")
                     
                 # Convert to string
                 attr_precision = None
@@ -242,8 +242,8 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'None' | None: return None
             
             case _:
-                _LOGGER.warn(f"DAB Pumps encountered a unit or measurement '{unit}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
-                return unit
+                _LOGGER.warn(f"DAB Pumps encountered a unit or measurement '{params.unit}' for '{params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
+                return params.unit
         
         
     
