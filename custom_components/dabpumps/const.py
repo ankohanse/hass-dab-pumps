@@ -12,7 +12,7 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2024.01.2"
+VERSION="2024.02.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"
@@ -50,6 +50,13 @@ BINARY_SENSOR_VALUES_ALL = BINARY_SENSOR_VALUES_ON + BINARY_SENSOR_VALUES_OFF
 
 
 DABPUMPS_API_URL = "https://dconnect.dabpumps.com"
+API_RETRY_ATTEMPTS = 10
+API_RETRY_DELAY = 5    # seconds
+
+# Debug: set this constant to True to simulate a configuration with multiple installations for one DAB account
+SIMULATE_MULTI_INSTALL = False
+SIMULATE_SUFFIX_ID = "_test"
+SIMULATE_SUFFIX_NAME = " (test)"
 
 
 STARTUP_MESSAGE = f"""

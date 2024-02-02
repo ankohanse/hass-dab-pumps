@@ -267,6 +267,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity):
             case 'in':      return SensorDeviceClass.DISTANCE
             case 's':       return SensorDeviceClass.DURATION
             case 'h':       return None
+            case 'rpm':     return None
             case 'B':       return SensorDeviceClass.DATA_SIZE
             case 'kB':      return SensorDeviceClass.DATA_SIZE
             case 'MB':      return SensorDeviceClass.DATA_SIZE

@@ -38,6 +38,11 @@ from .api import (
     DabPumpsApiAuthError,
 )
 
+from .coordinator import (
+    DabPumpsCoordinatorFactory,
+    DabPumpsCoordinator,
+)
+
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -61,15 +66,15 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Test the username and password by connecting to the DConnect website"""
         _LOGGER.info("Trying connection...")
         
-        dabpumpsapi = DabPumpsApiFactory.create(None, self._username, self._password)
+        coordinator = DabPumpsCoordinatorFactory.create_temp(self._username, self._password)
         try:
             # Call the DabPumpsApi with the detect_device method
-            self._install_map = await dabpumpsapi.async_detect_installs()
+            self._install_map = await coordinator.async_config_flow_data()
             
-            _LOGGER.info("Successfully connected!")
-            _LOGGER.debug(f"install_map: {self._install_map}")
-                
-            return True
+            if self._install_map:
+                _LOGGER.info("Successfully connected!")
+                _LOGGER.debug(f"install_map: {self._install_map}")
+                return True
         
         except DabPumpsApiError as e:
             self._errors = f"Failed to connect to DAB Pumps DConnect website: {e}"
@@ -78,6 +83,8 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         except DabPumpsApiAuthError as e:
             self._errors = f"Authentication failed: {e}"
             return False
+        
+        return False
     
     
     # This is step 1 for the user/pass function.
@@ -185,7 +192,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             _LOGGER.debug(f"Options flow handle user input")
             self._errors = []
             
-            if not errors:
+            if not self._errors:
                 # Value of data will be set on the options property of the config_entry instance.
                 return self.async_create_entry(
                     title="",
