@@ -23,7 +23,6 @@ from homeassistant.helpers.update_coordinator import (
     UpdateFailed,
 )
 
-
 from homeassistant.const import (
     CONF_USERNAME,
     CONF_PASSWORD,
@@ -157,14 +156,18 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Fetch installation data from API.
         """
         _LOGGER.debug(f"Config flow data")
-
-        async with async_timeout.timeout(60):
-            success = await self._async_detect_data()
-
-            _LOGGER.debug(f"install_map: {self._install_map}")
-            return (self._install_map)
-
-
+        
+        try:
+            async with async_timeout.timeout(60):
+                success = await self._async_detect_data()
+                
+                _LOGGER.debug(f"install_map: {self._install_map}")
+                return (self._install_map)
+            
+        except asyncio.TimeoutError as err:
+            raise UpdateFailed(f"Timeout while communicating with API: {err}")
+    
+    
     async def _async_update_data(self):
         """
         Fetch sensor data from API.
@@ -184,16 +187,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug(f"config_map: {self._config_map}")
                 _LOGGER.debug(f"status_map: {self._status_map}")
                 return (self._device_map, self._config_map, self._status_map)
-
-        except DabPumpsApiAuthError as err:
-            # Raising ConfigEntryAuthFailed will cancel future updates
-            # and start a config flow with SOURCE_REAUTH (async_step_reauth)
-            raise ConfigEntryAuthFailed from err
-            
-        except DabPumpsApiError as err:
-            raise UpdateFailed(f"Error communicating with API: {err}")
+        
+        except asyncio.TimeoutError as err:
+            raise UpdateFailed(f"Timeout while communicating with API: {err}")
     
-
+    
     async def _async_detect_data(self):
         error = None
         for retry in range(1, API_RETRY_ATTEMPTS):
@@ -237,7 +235,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         return False
     
-    
+        
     def _process_installs_data(self, data):
         """
         Get device data for each installation
@@ -410,7 +408,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 
     
-    def get_diagnostics(self) -> dict[str, Any]:
+    async def async_get_diagnostics(self) -> dict[str, Any]:
         install_map = { k: v._asdict() for k,v in self._install_map.items() }
         device_map = { k: v._asdict() for k,v in self._device_map.items() }
         config_map = { k: v._asdict() for k,v in self._config_map.items() }
@@ -419,6 +417,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         for cmk,cmv in self._config_map.items():
             config_map[cmk]['meta_params'] = { k: v._asdict() for k,v in cmv.meta_params.items() }
+            
+        api_data = await self._api.async_get_diagnostics()
 
         return {
             "diagnostics_ts": datetime.now(),
@@ -435,7 +435,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "string_map_ts": self._string_map_ts,
                 "string_map": string_map,
             },
-            "api": async_redact_data(self._api.get_diagnostics(), DIAGNOSTICS_REDACT),
+            "api": async_redact_data(api_data, DIAGNOSTICS_REDACT),
         },
     
     

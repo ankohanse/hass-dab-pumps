@@ -17,6 +17,7 @@ from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import IntegrationError
+from homeassistant.helpers.storage import Store
 
 from httpx import RequestError, TimeoutException
 
@@ -24,7 +25,8 @@ from .const import (
     DOMAIN,
     API,
     DABPUMPS_API_URL,
-    SIMULATE_SUFFIX_ID
+    SIMULATE_SUFFIX_ID,
+    DIAGNOSTICS_REDACT
 )
 
 
@@ -52,7 +54,7 @@ class DabPumpsApiFactory:
             
         if not api:
             # Create a new DabPumpsApi instance
-            api = DabPumpsApi(username, password)
+            api = DabPumpsApi(hass, username, password)
     
             # cache this new DabPumpsApi instance        
             if hass:
@@ -63,14 +65,17 @@ class DabPumpsApiFactory:
 
 # DabPumpsAPI to detect device and get device info, fetch the actual data from the Resol device, and parse it
 class DabPumpsApi:
-    def __init__(self, username, password):
+    
+    _STORAGE_VERSION = 1
+    _STORAGE_KEY_HISTORY = DOMAIN + ".api_history"
+    
+    def __init__(self, hass, username, password):
         self._username = username
         self._password = password
         self._client = None
         
         # calls history for diagnostics
-        self._history = []
-        self._calls = {}
+        self._history_store = Store[dict](hass, self._STORAGE_VERSION, self._STORAGE_KEY_HISTORY) if hass else None
 
     
     async def async_login(self):
@@ -85,13 +90,13 @@ class DabPumpsApi:
         _LOGGER.debug(f"DAB Pumps retrieve login page via GET {url}")
         response = await client.get(url)
         
-        self._update_diagnostics("home", "GET", url, None, None, response)
-
+        await self._async_update_diagnostics("home", "GET", url, None, None, response)
+        
         if (not response.is_success):
             error = f"Unable to connect, got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
-
+        
         match = re.search(r'action\s?=\s?\"(.*?)\"', response.text, re.MULTILINE)
         if not match:    
             error = f"Unexpected response while retrieving login url from {url}: {response.text}"
@@ -101,12 +106,12 @@ class DabPumpsApi:
         login_url = match.group(1).replace('&amp;', '&')
         login_data = {'username': self._username, 'password': self._password }
         login_hdrs = {'Content-Type': 'application/x-www-form-urlencoded'}
-
+        
         # Step 2: Login
         _LOGGER.debug(f"DAB Pumps login via POST {login_url}")
         response = await client.post(login_url, data=login_data, headers=login_hdrs)
         
-        self._update_diagnostics("login", "POST", login_url, login_hdrs, login_data, response)
+        await self._async_update_diagnostics("login", "POST", login_url, login_hdrs, login_data, response)
 
         if (not response.is_success):
             error = f"Unable to login, got response {response.status_code}"
@@ -125,7 +130,7 @@ class DabPumpsApi:
                 _LOGGER.debug(f"DAB Pumps logout via GET {url}")
                 response = await self._client.get(url)
                 
-                self._update_diagnostics("logout", "GET", url, None, None, response)
+                await self._async_update_diagnostics("logout", "GET", url, None, None, response)
 
                 if (not response.is_success):
                     error = f"Unable to logout, got response {response.status_code} while trying to reach {url}"
@@ -146,7 +151,7 @@ class DabPumpsApi:
         _LOGGER.debug(f"DAB Pumps retrieve installation info via GET {url}")
         response = await self._client.get(url)
         
-        self._update_diagnostics("installation list", "GET", url, None, None, response)
+        await self._async_update_diagnostics("installation list", "GET", url, None, None, response)
 
         if (not response.is_success):
             error = f"Unable retrieve installations, got response {response.status_code} while trying to reach {url}"
@@ -177,7 +182,7 @@ class DabPumpsApi:
         _LOGGER.debug(f"DAB Pumps retrieve language info via GET {url}")
         response = await self._client.get(url)
         
-        self._update_diagnostics(f"localization_{lang}", "GET", url, None, None, response)
+        await self._async_update_diagnostics(f"localization_{lang}", "GET", url, None, None, response)
         
         if (not response.is_success):
             error = f"Unable retrieve language info, got response {response.status_code} while trying to reach {url}"
@@ -208,7 +213,7 @@ class DabPumpsApi:
         _LOGGER.debug(f"DAB Pumps retrieve device statusses for '{device.name}' via GET {url}")
         response = await self._client.get(url)
         
-        self._update_diagnostics(f"statusses {device.serial.removesuffix(SIMULATE_SUFFIX_ID)}", "GET", url, None, None, response)
+        await self._async_update_diagnostics(f"statusses {device.serial.removesuffix(SIMULATE_SUFFIX_ID)}", "GET", url, None, None, response)
         
         if (not response.is_success):
             error = f"Unable retrieve device data for '{device.name}', got response {response.status_code} while trying to reach {url}"
@@ -228,28 +233,55 @@ class DabPumpsApi:
                 raise DabPumpsApiError(error)
         
         return json.loads(result.get('status', '{}'))
-    
-    
-    def get_diagnostics(self) -> dict[str, Any]:
+        
+        
+    async def async_get_diagnostics(self) -> dict[str, Any]:
+        data = await self._history_store.async_load() or {}
+        history = data.get("history", [])
+        details = data.get("details", {})
+        
         return {
             "username": self._username,
             "password": self._password,
             
-            "history": self._history,
-            "details": self._calls,
+            "history": history,
+            "details": details,
         }
-        
     
-    def _update_diagnostics(self, context, method, url, headers, content, response):
-        # remember a history of what call happened when
-        self._history.append({
-            "ts": datetime.now(),
-            "op": context,
+    
+    async def _async_update_diagnostics(self, context, method, url, headers, content, response):
+        if not self._history_store:
+            return
+        
+        item = DabPumpsApiHistoryItem(context)
+        detail = DabPumpsApiHistoryDetail(context, method, url, headers, content, response)        
+        
+        # Persist this history in file instead of keeping in memory
+        data = await self._history_store.async_load() or {}
+        history = data.get("history", [])
+        details = data.get("details", {})
+        
+        history.append( async_redact_data(item, DIAGNOSTICS_REDACT) )
+        if len(history) > 32:
+            history.pop(0)
+        
+        details[context] = async_redact_data(detail, DIAGNOSTICS_REDACT)
+        
+        data["history"] = history
+        data["details"] = details
+        await self._history_store.async_save(data)
+
+
+class DabPumpsApiHistoryItem(dict):
+    def __init__(self, context):
+        super().__init__({ 
+            "ts": datetime.now(), 
+            "op": context 
         })
-        if len(self._history) > 24:
-            self._history.pop(0)
-            
-        # Remember details of last occurance of each call type
+
+
+class DabPumpsApiHistoryDetail(dict):
+    def __init__(self, context, method, url, headers, content, response):
         req = {
             "method": method,
             "url": url,
@@ -264,16 +296,19 @@ class DabPumpsApi:
         }
         if response.is_success and response.headers.get('content-type','').startswith('application/json'):
             res['json'] = response.json()
-
-        self._calls[context] = {
-            "request": req,
+        
+        super().__init__({
+            "request": req, 
             "response": res,
-        }
-    
-    
+        })
+
+        
 class DabPumpsApiAuthError(Exception):
     """Exception to indicate authentication failure."""
 
 
 class DabPumpsApiError(Exception):
     """Exception to indicate generic error failure."""    
+    
+    
+
