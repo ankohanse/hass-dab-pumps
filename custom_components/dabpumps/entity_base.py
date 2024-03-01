@@ -283,7 +283,7 @@ class DabPumpsEntity(Entity):
             
             case _:
                 _LOGGER.warn(f"DAB Pumps encountered a unit or measurement '{self._params.unit}' for '{self._params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
-                return params.unit
+                return self._params.unit
     
     
     def get_unit(self):

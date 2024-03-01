@@ -99,7 +99,7 @@ class DabPumpsApi:
                     await self._async_update_diagnostics("token reuse", None, None)
                     return True
                     
-        # Duplicate check to have been logged out of previous sessions.
+        # Make sure to have been logged out of previous sessions.
         # DAB Pumps service does not handle multiple logins from same account very well
         await self.async_logout()
         
