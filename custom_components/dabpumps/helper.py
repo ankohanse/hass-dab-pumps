@@ -4,7 +4,11 @@ import async_timeout
 from datetime import timedelta
 from typing import Any
 
+from homeassistant.components.number import NumberDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.components.sensor import SensorStateClass
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import EntityCategory
 from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.core import HomeAssistant
@@ -22,6 +26,9 @@ from .const import (
     BINARY_SENSOR_VALUES_ON,
     BINARY_SENSOR_VALUES_OFF,
     BINARY_SENSOR_VALUES_ALL,
+    SWITCH_VALUES_ON,
+    SWITCH_VALUES_OFF,
+    SWITCH_VALUES_ALL,
 )
 
 from .coordinator import (
@@ -172,12 +179,28 @@ class DabPumpsHelper:
         """
         Determine what platform an entry should be added into
         """
-
+        
+        # Is it a switch/select/number entity? 
+        # Needs to have group 'Extra Comfort' and change rights for 'Customer'
+        groups_config = [
+            'Extra Comfort'
+        ]
+        if params.group in groups_config and 'C' in params.change:
+            if params.type == 'enum':
+                if len(params.values or []) == 2:
+                    if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
+                        return Platform.SWITCH
+                    
+                return Platform.SELECT
+                
+            elif params.type == 'measure' and params.min is not None and params.max is not None:
+                return Platform.NUMBER
+        
         # Is it a binary sensor?
         if params.type == 'enum' and len(params.values or []) == 2:
             if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
                 return Platform.BINARY_SENSOR
-
+        
         # Everything else will become a regular sensor
         return Platform.SENSOR
-
+    

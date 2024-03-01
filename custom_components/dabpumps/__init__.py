@@ -40,7 +40,11 @@ _LOGGER.info(STARTUP_MESSAGE)
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
-    Platform.BINARY_SENSOR
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+    
 ]
 
 

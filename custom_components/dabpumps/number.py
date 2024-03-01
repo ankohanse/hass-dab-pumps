@@ -1,31 +1,25 @@
 import asyncio
 import logging
 import math
-import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant import exceptions
-from homeassistant.components.binary_sensor import PLATFORM_SCHEMA as PARENT_PLATFORM_SCHEMA
-from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-from homeassistant.components.binary_sensor import ENTITY_ID_FORMAT
+from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberMode
+from homeassistant.components.number import ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME
-from homeassistant.const import CONF_UNIQUE_ID
 from homeassistant.const import EntityCategory
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import IntegrationError
-from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import async_get
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-
 
 from datetime import timedelta
 from datetime import datetime
@@ -40,43 +34,35 @@ from .const import (
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
-    BINARY_SENSOR_VALUES_ON,
-    BINARY_SENSOR_VALUES_OFF,
-    BINARY_SENSOR_VALUES_ALL,
 )
 
 from .entity_base import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
     DabPumpsEntity,
+    
 )
 
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORM_SCHEMA = PARENT_PLATFORM_SCHEMA.extend(
-    {
-        vol.Required(CONF_NAME): cv.string,
-        vol.Optional(CONF_UNIQUE_ID): cv.string,
-    }
-)
-
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
     """
-    Setting up the adding and updating of binary_sensor entities
+    Setting up the adding and updating of number entities
     """
     helper = DabPumpsEntityHelperFactory.create(hass, config_entry)
-    await helper.async_setup_entry(Platform.BINARY_SENSOR, DabPumpsBinarySensor, async_add_entities)
+    await helper.async_setup_entry(Platform.NUMBER, DabPumpsNumber, async_add_entities)
 
 
-class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity):
+class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     """
-    Representation of a DAB Pumps Binary Sensor.
+    Representation of a DAB Pumps Select Entity.
     
-    Could be a sensor that is part of a pump like ESybox, Esybox.mini
+    Could be a configuration setting that is part of a pump like ESybox, Esybox.mini
     Or could be part of a communication module like DConnect Box/Box2
     """
+    
     def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
         """ Initialize the sensor. """
         CoordinatorEntity.__init__(self, coordinator)
@@ -90,7 +76,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         self._coordinator = coordinator
         self._device = device
         self._params = params
-        
+
         # Create all attributes
         self._update_attributes(status, True)
     
@@ -111,8 +97,8 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
     def name(self) -> str:
         """Return the name of the entity."""
         return self._attr_name
-    
-    
+        
+        
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -131,28 +117,29 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
     
     def _update_attributes(self, status, is_create):
         
-        # Sanity check
-        if self._params.type != 'enum':
-            _LOGGER.error(f"Unexpected parameter type ({self._params.type}) for a binary sensor")
-            
-        if len(self._params.values or []) != 2:
-            _LOGGER.error(f"Unexpected parameter values ({self._params.values}) for a binary sensor")
-            
-        # Lookup the dict string for the value and otherwise return the value itself
-        val = self._params.values.get(status.val, status.val)
-        if val in BINARY_SENSOR_VALUES_ON:
-            is_on = True
-        elif val in BINARY_SENSOR_VALUES_OFF:
-            is_on = False
-        else:
-            is_on = None
-            
+        if self._params.type != 'measure':
+            _LOGGER.error(f"Unexpected parameter type ({self._params.type}) for a number entity")
+
         # Process any changes
         changed = False
+        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
+            # Convert to float
+            attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
+            attr_min = round(float(self._params.min) * self._params.weight, attr_precision)
+            attr_max = round(float(self._params.max) * self._params.weight, attr_precision)
+            attr_val = round(float(status.val) * params.weight, attr_precision)
+            attr_step = params.weight
+        else:
+            # Convert to int
+            attr_precision = 0
+            attr_min = int(self._params.min)
+            attr_max = int(self._params.max)
+            attr_val = int(status.val)
+            attr_step = self.get_number_step()
         
         # update creation-time only attributes
         if is_create:
-            _LOGGER.debug(f"Create binary_sensor '{status.key}' ({status.unique_id})")
+            _LOGGER.debug(f"Create number entity '{status.key}' ({status.unique_id})")
             
             self._attr_unique_id = status.unique_id
             
@@ -160,8 +147,13 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
             self._attr_name = self._get_string(status.key)
             self._name = status.key
             
-            self._attr_device_class = self._get_device_class() 
-
+            self._attr_mode = NumberMode.BOX
+            self._attr_device_class = self.get_number_device_class()
+            self._attr_entity_category = self.get_entity_category()
+            self._attr_native_min_value = attr_min
+            self._attr_native_max_value = attr_max
+            self._attr_native_step = attr_step
+            
             self._attr_device_info = DeviceInfo(
                identifiers = {(DOMAIN, self._device.serial)},
                name = self._device.name,
@@ -173,20 +165,35 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
             changed = True
         
         # update value if it has changed
-        if is_create \
-        or (self._attr_is_on != is_on):
+        if is_create or self._attr_native_value != attr_val:
+            self._attr_native_value = attr_val
+            self._attr_native_unit_of_measurement = self.get_unit()
             
-            self._attr_is_on = is_on
+            self._attr_icon = self.get_icon()
             changed = True
-            
+        
         return changed
     
     
+    async def async_set_native_value(self, value: float) -> None:
+        """Change the selected option"""
+        
+        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
+            # Convert to float
+            data_val = float(round(value / self._params.weight))
+        else:
+            # Convert to int
+            data_val = int(value)
+            value = int(value)
+            
+        _LOGGER.debug(f"Set {self.entity_id} to {value} ({data_val})")
+        
+        success = await self._coordinator.async_modify_data(self.object_id, data_val)
+        if success:
+            self._attr_native_value = value
+            self.async_write_ha_state()
+    
+    
     def _get_string(self, str):
-        """return 'translated' string or original string if not found"""
+        # return 'translated' string or original string if not found
         return self._coordinator.string_map.get(str, str)
-    
-    
-    def _get_device_class(self):
-        """Return one of the BinarySensorDeviceClass.xyz or None"""
-        return None

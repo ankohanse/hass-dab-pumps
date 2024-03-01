@@ -12,7 +12,7 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2024.02.2"
+VERSION="2024.03.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"
@@ -48,8 +48,14 @@ BINARY_SENSOR_VALUES_ON = ['1', 'active']
 BINARY_SENSOR_VALUES_OFF = ['0', 'disactive', 'inactive']
 BINARY_SENSOR_VALUES_ALL = BINARY_SENSOR_VALUES_ON + BINARY_SENSOR_VALUES_OFF
 
+SWITCH_VALUES_ON = ['1', 'Enable']
+SWITCH_VALUES_OFF = ['0', 'Disable']
+SWITCH_VALUES_ALL = SWITCH_VALUES_ON + SWITCH_VALUES_OFF
 
-DABPUMPS_API_URL = "https://dconnect.dabpumps.com"
+
+DABPUMPS_API_HOST = "dconnect.dabpumps.com"
+DABPUMPS_API_URL = "https://" + DABPUMPS_API_HOST
+API_TOKEN_TIME_MIN = 10 # seconds
 API_RETRY_ATTEMPTS = 10
 API_RETRY_DELAY = 5    # seconds
 

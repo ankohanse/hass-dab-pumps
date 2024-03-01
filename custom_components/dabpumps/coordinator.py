@@ -57,7 +57,7 @@ _LOGGER = logging.getLogger(__name__)
 DabPumpsInstall = namedtuple('DabPumpsInstall', 'id, name, description, company, address, timezone, devices')
 DabPumpsDevice = namedtuple('DabPumpsDevice', 'serial, id, name, vendor, product, version, build, config_id, install_id')
 DabPumpsConfig = namedtuple('DabPumpsConfig', 'label, description, meta_params')
-DabPumpsParams = namedtuple('DabPumpsParams', 'key, type, unit, weight, values, family, group, view, change, log, report')
+DabPumpsParams = namedtuple('DabPumpsParams', 'key, type, unit, weight, values, min, max, family, group, view, change, log, report')
 DabPumpsStatus = namedtuple('DabPumpsStatus', 'serial, unique_id, key, val')
 DabPumpsMessages = namedtuple('DabPumpsMessages', 'key, val')
 
@@ -144,6 +144,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._status_map = {}
         self._string_map_ts = datetime.min
         self._string_map = {}
+        
+        # retry counter for diagnosis
+        self._retries_needed = [ 0 for r in range(API_RETRY_ATTEMPTS) ]
 
     
     @property
@@ -192,9 +195,38 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Timeout while communicating with API: {err}")
     
     
+    async def async_modify_data(self, object_id, value):
+        """
+        Set an entity param via the API.
+        """
+        status = self._status_map.get(object_id)
+        if not status:
+            # Not found
+            return False
+            
+        if status.val == value:
+            # Not changed
+            return False
+        
+        _LOGGER.debug(f"Set {status.unique_id} from {status.val} to {value}")
+        
+        # update the cached value in status_map
+        status = status._replace(val=value)
+        self._status_map[object_id] = status
+        
+        # update the remote value
+        try:
+            async with async_timeout.timeout(60):
+                success = await self._async_change_device_status(status, value)
+                return success
+        
+        except asyncio.TimeoutError as err:
+            raise UpdateFailed(f"Timeout while communicating with API: {err}")
+    
+    
     async def _async_detect_data(self):
         error = None
-        for retry in range(1, API_RETRY_ATTEMPTS):
+        for retry in range(0, API_RETRY_ATTEMPTS):
             try:
                 success = await self._api.async_login()
                     
@@ -214,28 +246,77 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                             data = await self._api.async_fetch_device_statusses(device)
                             succ = self._process_device_status_data(device, data)
                             success = success and succ
-
+                
                 if (success):
+                    self._retries_needed[retry] += 1
                     return True;
             
             except DabPumpsApiAuthError:
                 error = f"Unable to authenticate to dconnect.dabpumps.com. Please re-check your username and password in your configuration!"
-    
-            except DabPumpsApiError:
-                error = f"Unable to connect to dconnect.dabpumps.com."
-
+            
+            except DabPumpsApiError as dpae:
+                error = f"Failed to retrieve data. {dpae}"
+            
+            except Exception as ex:
+                error = f"Failed communication to DAB Pumps server. {ex}"
+            
             # Log off, end session and retry if possible
             await self._api.async_logout();  
+            
             if retry < API_RETRY_ATTEMPTS:
-                _LOGGER.warn(f"Failed to retrieve devices and statusses. Retry {retry} in {API_RETRY_DELAY} seconds")
+                if retry < 2:
+                    _LOGGER.info(f"Retry {retry+1} in {API_RETRY_DELAY} seconds. {error}")
+                else:
+                    _LOGGER.warn(f"Retry {retry+1} in {API_RETRY_DELAY} seconds. {error}")
                 await asyncio.sleep(API_RETRY_DELAY)
             
         if error:
             _LOGGER.warning(error)
-
+        
+        self._retries_needed[retry] += 1
         return False
     
         
+    async def _async_change_device_status(self, status, value):
+        error = None
+        for retry in range(1, API_RETRY_ATTEMPTS):
+            try:
+                success = await self._api.async_login()
+                
+                # Fetch a new list of installations when the cached one expires
+                if success:
+                    success = await self._api.async_change_device_status(status, value)
+
+                if (success):
+                    self._retries_needed[retry] += 1
+                    return True;
+            
+            except DabPumpsApiAuthError:
+                error = f"Unable to authenticate to dconnect.dabpumps.com. Please re-check your username and password in your configuration!"
+            
+            except DabPumpsApiError as dpae:
+                error = f"Failed to set devices param. {dpae}"
+            
+            except Exception as ex:
+                error = f"Failed communication to DAB Pumps server. {ex}"
+            
+            # Log off, end session and retry if possible
+            await self._api.async_logout();  
+            
+            if retry < API_RETRY_ATTEMPTS:
+                if retry < 2:
+                    _LOGGER.info(f"Retry {retry+1} in {API_RETRY_DELAY} seconds. {error}")
+                else:
+                    _LOGGER.warn(f"Retry {retry+1} in {API_RETRY_DELAY} seconds. {error}")
+                await asyncio.sleep(API_RETRY_DELAY)
+            
+        if error:
+            _LOGGER.warning(error)
+        
+        self._retries_needed[retry] += 1
+        return False
+
+    
     def _process_installs_data(self, data):
         """
         Get device data for each installation
@@ -321,9 +402,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 param_type = meta_param.get('type') or ''
                 param_unit = meta_param.get('unit')
                 param_weight = meta_param.get('weight')
+                param_min = meta_param.get('min')
+                param_max = meta_param.get('max')
                 param_family = meta_param.get('family') or ''
                 param_group = meta_param.get('group') or ''
-
+                
                 values = meta_param.get('values') or []
                 param_values = { str(v[0]): str(v[1]) for v in values if len(v) >= 2 }
                 
@@ -333,6 +416,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     unit = param_unit,
                     weight = param_weight,
                     values = param_values,
+                    min = param_min,
+                    max = param_max,
                     family = param_family,
                     group = param_group,
                     view = ''.join([ s[0] for s in (meta_param.get('view') or []) ]),
@@ -418,10 +503,18 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         for cmk,cmv in self._config_map.items():
             config_map[cmk]['meta_params'] = { k: v._asdict() for k,v in cmv.meta_params.items() }
             
+        calls_total = sum(self._retries_needed) or 1
+        retries_counter = { idx: n for idx, n in enumerate(self._retries_needed) }
+        retries_percent = { idx: round(100.0 * n / calls_total, 2) for idx, n in enumerate(self._retries_needed) }
+            
         api_data = await self._api.async_get_diagnostics()
 
         return {
             "diagnostics_ts": datetime.now(),
+            "diagnostics": {
+                "retries_counter": retries_counter,
+                "retries_percent": retries_percent,
+            },
             "data": {
                 "install_id": self._install_id,
                 "install_map_ts": self._install_map_ts,
