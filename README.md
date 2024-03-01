@@ -63,10 +63,14 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
     │   ├── const.py
     │   ├── coordinator.py
     │   ├── diagnostics.py
+    │   ├── entity_base.py
     │   ├── helper.py
     │   ├── manifest.json
+    │   ├── number.py
+    │   ├── select.py
     │   ├── sensor.py
-    │   └── strings.json  
+    │   ├── strings.json
+    │   └── switch.py  
     ```
 
 2. Restart Home Assistant.
