@@ -265,6 +265,7 @@ class DabPumpsEntity(Entity):
             case 'ms':          return 'ms'
             case 's':           return 's'
             case 'secondi':     return 's'
+            case 'min':         return 'min'
             case 'h':           return 'h'
             case 'rpm':         return 'rpm'
             case 'B':           return 'B'
@@ -392,14 +393,25 @@ class DabPumpsEntity(Entity):
         # Return StateClass=None for Enum or Label
         if self._params.type != 'measure':
             return None
-            
+        
         # Return StateClass=None for params that are a setting, unlikely to change often
         if self._params.change:
             return None
-            
+        
         # Return StateClass=None for diagnostics kind of parameters
         groups_none = ['Modbus', 'Extra Comfort']
         if self._params.group in groups_none:
+            return None
+        
+        # Return StateClass=None for some specific fields
+        keys_none = [
+            'Last_Period_Flow_Counter',
+            'Last_Period_flow_Flow_Counter_Gall',
+            'Last_Period_Energy_Counter',
+            'PartialEnergy',
+            'TotalEnergy',
+        ]
+        if self._params.key in keys_none:
             return None
             
         keys_t = []

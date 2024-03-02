@@ -125,15 +125,18 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
                     # Convert to float
                     attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
                     attr_val = round(float(status.val) * self._params.weight, attr_precision)
+                    attr_unit = self.get_unit()
                 else:
                     # Convert to int
                     attr_precision = 0
                     attr_val = int(status.val)
+                    attr_unit = self.get_unit()
                     
             case 'enum':
                 # Lookup the dict string for the value and otherwise return the value itself
                 attr_precision = None
                 attr_val = self._get_string(self._params.values.get(status.val, status.val))
+                attr_unit = None
 
             case 'label' | _:
                 if self._params.type != 'label':
@@ -142,6 +145,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
                 # Convert to string
                 attr_precision = None
                 attr_val = self._get_string(str(status.val))
+                attr_unit = None
         
         # Process any changes
         changed = False
@@ -173,7 +177,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         # update value if it has changed
         if is_create or self._attr_native_value != attr_val:
             self._attr_native_value = attr_val
-            self._attr_native_unit_of_measurement = self.get_unit()
+            self._attr_native_unit_of_measurement = attr_unit
             self._attr_suggested_display_precision = attr_precision
             
             self._attr_icon = self.get_icon()
