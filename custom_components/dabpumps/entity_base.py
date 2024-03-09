@@ -152,10 +152,12 @@ class DabPumpsEntityHelper:
                 # This status will be handled via another platform
                 continue
                 
-            else:
+            try:
                 # Create a Sensor, Binary_Sensor, or other entity for this status
                 entity = target_class(self.coordinator, self.install_id, object_id, device, params, status)
                 entities.append(entity)
+            except Exception as  ex:
+                _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
         
         _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self.install_name} with {len(device_map)} devices")
         if entities:
@@ -307,6 +309,7 @@ class DabPumpsEntity(Entity):
             case 'cm':      return 'mdi:waves-arrow-up'
             case 'in':      return 'mdi:waves-arrow-up'
             case 's':       return 'mdi:timer-sand'
+            case 'min':     return 'mdi:timer-sand'
             case 'h':       return 'mdi:timer'
             case 'B':       return 'mdi:memory'
             case 'kB':      return 'mdi:memory'
@@ -340,6 +343,7 @@ class DabPumpsEntity(Entity):
             case 'cm':      return NumberDeviceClass.DISTANCE
             case 'in':      return NumberDeviceClass.DISTANCE
             case 's':       return NumberDeviceClass.DURATION
+            case 'min':     return None
             case 'h':       return None
             case 'rpm':     return None
             case 'B':       return NumberDeviceClass.DATA_SIZE
@@ -374,6 +378,7 @@ class DabPumpsEntity(Entity):
             case 'cm':      return SensorDeviceClass.DISTANCE
             case 'in':      return SensorDeviceClass.DISTANCE
             case 's':       return SensorDeviceClass.DURATION
+            case 'min':     return None
             case 'h':       return None
             case 'rpm':     return None
             case 'B':       return SensorDeviceClass.DATA_SIZE
@@ -510,6 +515,8 @@ class DabPumpsEntity(Entity):
         match self._attr_unit:
             case 's':
                 candidates = [3600, 60, 1]
+            case 'min':
+                candidates = [60, 1]
             case 'h':
                 candidates = [24, 1]
             case _:

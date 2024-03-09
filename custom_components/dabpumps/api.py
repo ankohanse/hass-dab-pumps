@@ -79,12 +79,18 @@ class DabPumpsApi:
         self._password = password
         self._client = None
         
-        # calls history for diagnostics
-        self._hass = hass
-        self._history_store = Store[dict](hass, self._STORAGE_VERSION, self._STORAGE_KEY_HISTORY) if hass else None
-
-        # cleanup history store after each restart
-        self._hass.async_create_task(self._history_store.async_remove())
+        
+        if hass:
+            # calls history for diagnostics during normal operations    
+            self._hass = hass
+            self._history_store = Store[dict](hass, self._STORAGE_VERSION, self._STORAGE_KEY_HISTORY)
+        
+            # cleanup history store after each restart
+            self._hass.async_create_task(self._history_store.async_remove())
+        else:
+            # Use from a temporary coordinator during config-flow first time setup of component
+            self._hass = None
+            self._history_store = None
     
     
     async def async_login(self):
@@ -300,6 +306,9 @@ class DabPumpsApi:
     
     
     async def async_get_diagnostics(self) -> dict[str, Any]:
+        if not self._history_store:
+            return None
+            
         data = await self._history_store.async_load() or {}
         counter = data.get("counter", {})
         history = data.get("history", [])
@@ -330,6 +339,9 @@ class DabPumpsApi:
             detail = DabPumpsApiHistoryDetail(context, request, response) if request and response else None
             
             # Persist this history in file instead of keeping in memory
+            if not self._history_store:
+                return None
+            
             data = await self._history_store.async_load() or {}
             counter = data.get("counter", {})
             history = data.get("history", [])
@@ -353,7 +365,8 @@ class DabPumpsApi:
 
         # Create the worker task to update diagnostics in the background,
         # but do not let main loop wait for it to finish
-        self._hass.async_create_task(_async_worker(self, context, request, response))
+        if self._hass:
+            self._hass.async_create_task(_async_worker(self, context, request, response))
 
 
 
