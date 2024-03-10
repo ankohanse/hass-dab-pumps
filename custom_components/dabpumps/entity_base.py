@@ -413,8 +413,6 @@ class DabPumpsEntity(Entity):
             'Last_Period_Flow_Counter',
             'Last_Period_flow_Flow_Counter_Gall',
             'Last_Period_Energy_Counter',
-            'PartialEnergy',
-            'TotalEnergy',
         ]
         if self._params.key in keys_none:
             return None
@@ -430,9 +428,11 @@ class DabPumpsEntity(Entity):
             'FCt_Total_Delivered_Flow_mc',
             'HO_PowerOnHours',
             'HO_PumpRunHours',
+            'PartialEnergy',
             'SO_PowerOnSeconds',
             'SO_PumpRunSeconds',
             'StartNumber',
+            'TotalEnergy',
             'UpTime',
             'WlanRx',
             'WlanTx',
