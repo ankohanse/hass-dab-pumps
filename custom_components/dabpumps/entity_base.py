@@ -213,12 +213,22 @@ class DabPumpsEntityHelper:
         Determine what platform an entry should be added into
         """
         
-        # Is it a switch/select/number entity? 
+        # Is it a switch/select/number config or control entity? 
         # Needs to have group 'Extra Comfort' and change rights for 'Customer'
+        # or needs to be a specific key that would otherwise be excluded as group
+        keys_config = [
+            'PumpDisable'
+        ]
         groups_config = [
             'Extra Comfort'
         ]
-        if params.group in groups_config and 'C' in params.change:
+        is_config = False
+        if params.key in keys_config and 'I' in params.change:
+            is_config = True
+        elif params.group in groups_config and 'C' in params.change:
+            is_config = True
+        
+        if is_config:
             if params.type == 'enum':
                 if len(params.values or []) == 2:
                     if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
@@ -458,14 +468,24 @@ class DabPumpsEntity(Entity):
         if self._params.group in groups_none:
             return None
             
-        # Return None for params in groups associated with Config
+        # Return None for params in groups associated with Control
         # and that a customer is allowed to change.
         # Leads to the entities being added under 'Controls'
-        groups_config = [
+        groups_control = [
             'Extra Comfort',
         ]
-        if self._params.group in groups_config and 'C' in self._params.change:
+        if self._params.group in groups_control and 'C' in self._params.change:
             return None
+        
+        # Return CONFIG for params in groups associated with configuration
+        # and that an installer is allowed to change
+        # Leads to the entities being added under 'Configuration'
+        # Typically intended for restart or update functionality
+        groups_config = [
+            'System Management',
+        ]
+        if self._params.group in groups_config and 'I' in self._params.change:
+            return EntityCategory.CONFIG
             
         # Return DIAGNOSTIC for params in groups associated with diagnostics
         groups_diag = [
@@ -503,10 +523,7 @@ class DabPumpsEntity(Entity):
         
         if 'C' not in self._params.view and self._params.family == 'gear':
             return EntityCategory.DIAGNOSTIC
-            
-        # No entities under 'Configuration'
-        # This would be intended for restart or update functionality
-
+        
         # Return None for all others
         return None
     
