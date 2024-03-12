@@ -31,6 +31,7 @@ from .api import (
     DabPumpsApiFactory,
     DabPumpsApi,
     DabPumpsApiAuthError,
+    DabPumpsApiRightsError,
     DabPumpsApiError,
 )
 
@@ -144,6 +145,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._status_map = {}
         self._string_map_ts = datetime.min
         self._string_map = {}
+        self._user_info_ts = datetime.min
+        self._user_info = {}
         
         # retry counter for diagnosis
         self._retries_needed = [ 0 for r in range(API_RETRY_ATTEMPTS) ]
@@ -239,6 +242,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     data = await self._api.async_fetch_strings(self._language)
                     success = self._process_strings_data(data)
                 
+                if success and (datetime.now() - self._user_info_ts).total_seconds() > 86400:
+                    data = await self._api.async_fetch_user()
+                    success = self._process_user_data(data)
+                
                 # Retrieve the devices and statusses when an install_id is given
                 if success and self._install_id:
                     for device in self._device_map.values():
@@ -247,12 +254,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                             succ = self._process_device_status_data(device, data)
                             success = success and succ
                 
-                if (success):
+                if success:
                     self._retries_needed[retry] += 1
                     return True;
             
             except DabPumpsApiAuthError:
                 error = f"Unable to authenticate to dconnect.dabpumps.com. Please re-check your username and password in your configuration!"
+            
+            except DabPumpsApiRightsError:
+                error = f"Unable to authorize to dconnect.dabpumps.com. Please check you have sufficient rights for the operation!"
             
             except DabPumpsApiError as dpae:
                 error = f"Failed to retrieve data. {dpae}"
@@ -279,7 +289,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
     async def _async_change_device_status(self, status, value):
         error = None
-        for retry in range(1, API_RETRY_ATTEMPTS):
+        for retry in range(0, API_RETRY_ATTEMPTS):
             try:
                 success = await self._api.async_login()
                 
@@ -287,12 +297,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 if success:
                     success = await self._api.async_change_device_status(status, value)
 
-                if (success):
+                if success:
                     self._retries_needed[retry] += 1
                     return True;
             
             except DabPumpsApiAuthError:
                 error = f"Unable to authenticate to dconnect.dabpumps.com. Please re-check your username and password in your configuration!"
+            
+            except DabPumpsApiRightsError:
+                error = f"Unable to authorize to dconnect.dabpumps.com. Please check you have sufficient rights for the operation!"
             
             except DabPumpsApiError as dpae:
                 error = f"Failed to set devices param. {dpae}"
@@ -462,6 +475,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return True
 
 
+    def _process_user_data(self, data):
+        """
+        Get user info from data
+        """
+        self._user_info_ts = datetime.now() if data else datetime.min
+        self._user_info = data
+        return True
+
+
     def _process_device_status_data(self, device, data):
         """
         Process status data for a device
@@ -527,6 +549,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "status_map": status_map,
                 "string_map_ts": self._string_map_ts,
                 "string_map": string_map,
+                "user_info_ts": self._user_info_ts,
+                "user_info": self._user_info,
             },
             "api": async_redact_data(api_data, DIAGNOSTICS_REDACT),
         },

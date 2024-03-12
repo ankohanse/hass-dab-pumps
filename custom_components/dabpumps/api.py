@@ -120,7 +120,7 @@ class DabPumpsApi:
         
         await self._async_update_diagnostics("home", request, response)
         
-        if (not response.is_success):
+        if not response.is_success:
             error = f"Unable to connect, got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
@@ -142,7 +142,7 @@ class DabPumpsApi:
 
         await self._async_update_diagnostics("login", request, response)
 
-        if (not response.is_success):
+        if not response.is_success:
             error = f"Unable to login, got response {response.status_code}"
             raise DabPumpsApiAuthError(error)
 
@@ -162,7 +162,7 @@ class DabPumpsApi:
 
                 await self._async_update_diagnostics("logout", request, response)
                 
-                if (not response.is_success):
+                if not response.is_success:
                     error = f"Unable to logout, got response {response.status_code} while trying to reach {url}"
                     # ignore and continue
                 
@@ -186,19 +186,19 @@ class DabPumpsApi:
         
         await self._async_update_diagnostics("installation list", request, response)
         
-        if (not response.is_success):
+        if not response.is_success:
             error = f"Unable retrieve installations, got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
         
         result = response.json()
         
-        if (result['res'] != 'OK'):
+        if result['res'] != 'OK':
             # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
             if result['code'] in ['FORBIDDEN']:
-                error = f"Authentication failed: {result['res']} {result['code']} {result.get('msg','')}"
+                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
                 _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiAuthError(error)
+                raise DabPumpsApiRightsError(error)
             else:
                 error = f"Unable retrieve installations, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
                 _LOGGER.debug(error)    # logged as warning after last retry
@@ -218,25 +218,57 @@ class DabPumpsApi:
         
         await self._async_update_diagnostics(f"localization_{lang}", request, response)
         
-        if (not response.is_success):
+        if not response.is_success:
             error = f"Unable retrieve language info, got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
         
         result = response.json()
         
-        if (result['res'] != 'OK'):
+        if result['res'] != 'OK':
             # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
             if result['code'] in ['FORBIDDEN']:
-                error = f"Authentication failed: {result['res']} {result['code']} {result.get('msg','')}"
+                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
                 _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiAuthError(error)
+                raise DabPumpsApiRightsError(error)
             else:
                 error = f"Unable retrieve installations, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
                 _LOGGER.debug(error)    # logged as warning after last retry
                 raise DabPumpsApiError(error)
             
         return result.get('messages', {})
+
+
+    async def async_fetch_user(self):
+        
+        # Get installation data
+        url = DABPUMPS_API_URL + f"/api/v1/user"
+        
+        _LOGGER.debug(f"DAB Pumps retrieve user info via GET {url}")
+        request = self._client.build_request("GET", url)
+        response = await self._client.send(request)
+        
+        await self._async_update_diagnostics(f"user", request, response)
+        
+        if not response.is_success:
+            error = f"Unable retrieve user info, got response {response.status_code} while trying to reach {url}"
+            _LOGGER.debug(error)    # logged as warning after last retry
+            raise DabPumpsApiError(error)
+        
+        result = response.json()
+        
+        if result['res'] != 'OK':
+            # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
+            if result['code'] in ['FORBIDDEN']:
+                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
+                _LOGGER.debug(error)    # logged as warning after last retry
+                raise DabPumpsApiRightsError(error)
+            else:
+                error = f"Unable retrieve installations, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
+                _LOGGER.debug(error)    # logged as warning after last retry
+                raise DabPumpsApiError(error)
+            
+        return result
 
 
     # Fetch the statusses for a DAB Pumps device, which then constitues the Sensors
@@ -251,18 +283,18 @@ class DabPumpsApi:
         
         await self._async_update_diagnostics(f"statusses {serial}", request, response)
         
-        if (not response.is_success):
+        if not response.is_success:
             error = f"Unable retrieve device data for '{device.name}', got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
         
         result = response.json()
-        if (result['res'] != 'OK'):
+        if result['res'] != 'OK':
             # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
             if result['code'] in ['FORBIDDEN']:
-                error = f"Authentication failed: {result['res']} {result['code']} {result.get('msg','')}"
+                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
                 _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiAuthError(error)
+                raise DabPumpsApiRightsError(error)
             else:
                 error = f"Unable retrieve device data, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
                 _LOGGER.debug(error)    # logged as warning after last retry
@@ -285,17 +317,17 @@ class DabPumpsApi:
         
         await self._async_update_diagnostics(f"set {serial}:{status.key}", request, response)
         
-        if (not response.is_success):
+        if not response.is_success:
             error = f"Unable to set status {status.unique_id} to '{value}', got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
         
         result = response.json()
-        if (result['res'] != 'OK'):
+        if result['res'] != 'OK':
             if result['code'] in ['FORBIDDEN']:
-                error = f"Authentication failed: {result['res']} {result['code']} {result.get('msg','')}"
+                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
                 _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiAuthError(error)
+                raise DabPumpsApiRightsError(error)
             else:
                 error = f"Unable retrieve device data, got response {result['res']} {result['code']} {result.get('message','')} while trying to reach {url}"
                 _LOGGER.debug(error)    # logged as warning after last retry
@@ -373,6 +405,9 @@ class DabPumpsApi:
 class DabPumpsApiAuthError(Exception):
     """Exception to indicate authentication failure."""
 
+
+class DabPumpsApiRightsError(Exception):
+    """Exception to indicate authorization failure"""
 
 class DabPumpsApiError(Exception):
     """Exception to indicate generic error failure."""    
