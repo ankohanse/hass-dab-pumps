@@ -127,8 +127,8 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
             attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
             attr_min = round(float(self._params.min) * self._params.weight, attr_precision)
             attr_max = round(float(self._params.max) * self._params.weight, attr_precision)
-            attr_val = round(float(status.val) * params.weight, attr_precision)
-            attr_step = params.weight
+            attr_val = round(float(status.val) * self._params.weight, attr_precision)
+            attr_step = self._params.weight
         else:
             # Convert to int
             attr_precision = 0
@@ -160,7 +160,7 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
                manufacturer =  self._device.vendor,
                model = self._device.product,
                serial_number = self._device.serial,
-               sw_version = self._device.version,
+               hw_version = self._device.version,
             )
             changed = True
         

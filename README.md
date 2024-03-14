@@ -27,7 +27,7 @@ The DAB Pumps DConnect website and apps seem to have a problem with multiple log
 Therefore it is recommended to create a separate account within DAB Pumps DConnect that is specific for this HA integration. 
 - Create a fresh email address specifically for Home Assistant at gmail, outlook or another provider. 
 - Register this email address in the DAB Pumps DConnect website. Go to  [internetofpumps.com](https://internetofpumps.com/). Select 'Professional Users' and 'Open DConnect', or one of the apps. 
-- Then, while logged in into DAB Pumps DConnect using your normal account, go to 'installation settings' and under 'manage permissions' press 'Add member' to invite the newly created email account. Access level 'Customer' should be sufficient.
+- Then, while logged in into DAB Pumps DConnect using your normal account, go to 'installation settings' and under 'manage permissions' press 'Add member' to invite the newly created email account. Access level 'Installer' is recommended to be able to use all features of the integration.
 
 
 ## Installation
@@ -64,7 +64,6 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
     │   ├── coordinator.py
     │   ├── diagnostics.py
     │   ├── entity_base.py
-    │   ├── helper.py
     │   ├── manifest.json
     │   ├── number.py
     │   ├── select.py
@@ -129,6 +128,7 @@ Special thanks to the following people for their testing and feedback on the fir
 - [Djavdeteg](https://github.com/Djavdeteg) on ESybox Mini 3
 - [Coldness00](https://github.com/Coldness00) on ESybox Mini 3
 - [benjaminmurray](https://github.com/benjaminmurray) on ESybox Mini 3
+- [nicopret1](https://github.com/nicopret1) on ESybox Mini 3
 - [Bascht74](https://github.com/Bascht74) on ESybox Diver (with fluid add-on)
 
 

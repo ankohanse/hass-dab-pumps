@@ -168,7 +168,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
                manufacturer =  self._device.vendor,
                model = self._device.product,
                serial_number = self._device.serial,
-               sw_version = self._device.version,
+               hw_version = self._device.version,
             )
             changed = True
         

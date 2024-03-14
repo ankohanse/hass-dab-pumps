@@ -109,25 +109,17 @@ class DabPumpsApi:
         # DAB Pumps service does not handle multiple logins from same account very well
         await self.async_logout()
         
-        # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = httpx.AsyncClient(follow_redirects=True, timeout=120.0)
-        
         # Step 1: get login url
+        # Use a fresh client to keep track of cookies during login and subsequent calls
         url = DABPUMPS_API_URL
+        client = httpx.AsyncClient(follow_redirects=True, timeout=120.0)
+
         _LOGGER.debug(f"DAB Pumps retrieve login page via GET {url}")
-        request = client.build_request("GET", url)
-        response = await client.send(request)
+        text = await self._async_send_data_request("home", "GET", url, client=client)
         
-        await self._async_update_diagnostics("home", request, response)
-        
-        if not response.is_success:
-            error = f"Unable to connect, got response {response.status_code} while trying to reach {url}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsApiError(error)
-        
-        match = re.search(r'action\s?=\s?\"(.*?)\"', response.text, re.MULTILINE)
+        match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
         if not match:    
-            error = f"Unexpected response while retrieving login url from {url}: {response.text}"
+            error = f"Unexpected response while retrieving login url from {url}: {text}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiAuthError(error)
         
@@ -137,15 +129,9 @@ class DabPumpsApi:
         
         # Step 2: Login
         _LOGGER.debug(f"DAB Pumps login via POST {login_url}")
-        request = client.build_request("POST", login_url, data=login_data, headers=login_hdrs)
-        response = await client.send(request)
+        await self._async_send_data_request("login", "POST", login_url, data=login_data, hdrs=login_hdrs, client=client)
 
-        await self._async_update_diagnostics("login", request, response)
-
-        if not response.is_success:
-            error = f"Unable to login, got response {response.status_code}"
-            raise DabPumpsApiAuthError(error)
-
+        # if we reach this point without exceptions then login was successfull
         # remember this session so we re-use any cookies for subsequent calls
         self._client = client
         return True
@@ -157,15 +143,11 @@ class DabPumpsApi:
                 url = DABPUMPS_API_URL + '/logout'
                 
                 _LOGGER.debug(f"DAB Pumps logout via GET {url}")
-                request = self._client.build_request("GET", url)
-                response = await self._client.send(request)
+                await self._async_send_data_request("logout", "GET", url)
+            except:
+                pass # ignore any exceptions
 
-                await self._async_update_diagnostics("logout", request, response)
-                
-                if not response.is_success:
-                    error = f"Unable to logout, got response {response.status_code} while trying to reach {url}"
-                    # ignore and continue
-                
+            try:
                 # Forget our current session so we are forced to do a fresh login in a next retry
                 await self._client.aclose()
             except:
@@ -176,167 +158,135 @@ class DabPumpsApi:
         return True
         
         
-    async def async_fetch_installs(self):
-        # Get installation data
-        url = DABPUMPS_API_URL + '/api/v1/gui/installation/list?lang=en'
+    async def async_fetch_install_list(self):
+        """Get installation list"""
+        context = f"installation list"
+        verb = "GET"
+        url = DABPUMPS_API_URL + '/api/v1/installation'
         
-        _LOGGER.debug(f"DAB Pumps retrieve installation info via GET {url}")
-        request = self._client.build_request("GET", url)
-        response = await self._client.send(request)
-        
-        await self._async_update_diagnostics("installation list", request, response)
-        
-        if not response.is_success:
-            error = f"Unable retrieve installations, got response {response.status_code} while trying to reach {url}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsApiError(error)
-        
-        result = response.json()
-        
-        if result['res'] != 'OK':
-            # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
-            if result['code'] in ['FORBIDDEN']:
-                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiRightsError(error)
-            else:
-                error = f"Unable retrieve installations, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiError(error)
-            
-        return result.get('data', {})
+        _LOGGER.debug(f"DAB Pumps retrieve installation list via {verb} {url}")
+        result = await self._async_send_json_request(context, verb, url)
+    
+        return result
+    
 
-
-    async def async_fetch_strings(self, lang):
+    async def async_fetch_install(self, install_id):
+        """Get installation data"""
+        context = f"installation {install_id}"
+        verb = "GET"
+        url = DABPUMPS_API_URL + f"/api/v1/installation/{install_id.removesuffix(SIMULATE_SUFFIX_ID)}"
         
-        # Get installation data
-        url = DABPUMPS_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON"
-        
-        _LOGGER.debug(f"DAB Pumps retrieve language info via GET {url}")
-        request = self._client.build_request("GET", url)
-        response = await self._client.send(request)
-        
-        await self._async_update_diagnostics(f"localization_{lang}", request, response)
-        
-        if not response.is_success:
-            error = f"Unable retrieve language info, got response {response.status_code} while trying to reach {url}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsApiError(error)
-        
-        result = response.json()
-        
-        if result['res'] != 'OK':
-            # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
-            if result['code'] in ['FORBIDDEN']:
-                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiRightsError(error)
-            else:
-                error = f"Unable retrieve installations, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiError(error)
-            
-        return result.get('messages', {})
-
-
-    async def async_fetch_user(self):
-        
-        # Get installation data
-        url = DABPUMPS_API_URL + f"/api/v1/user"
-        
-        _LOGGER.debug(f"DAB Pumps retrieve user info via GET {url}")
-        request = self._client.build_request("GET", url)
-        response = await self._client.send(request)
-        
-        await self._async_update_diagnostics(f"user", request, response)
-        
-        if not response.is_success:
-            error = f"Unable retrieve user info, got response {response.status_code} while trying to reach {url}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsApiError(error)
-        
-        result = response.json()
-        
-        if result['res'] != 'OK':
-            # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
-            if result['code'] in ['FORBIDDEN']:
-                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiRightsError(error)
-            else:
-                error = f"Unable retrieve installations, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiError(error)
-            
+        _LOGGER.debug(f"DAB Pumps retrieve installation info via {verb} {url}")
+        result = await self._async_send_json_request(context, verb, url)
+    
         return result
 
 
-    # Fetch the statusses for a DAB Pumps device, which then constitues the Sensors
-    async def async_fetch_device_statusses(self, device):
+    async def async_fetch_device_config(self, device):
+        """Fetch the statusses for a DAB Pumps device, which then constitues the Sensors"""
+    
+        config_id = device.config_id
+
+        context = f"configuration {config_id}"
+        verb = "GET"
+        url = DABPUMPS_API_URL + f"/api/v1/configuration/{config_id}"
         
+        _LOGGER.debug(f"DAB Pumps retrieve device statusses for '{device.name}' via {verb} {url}")
+        result = await self._async_send_json_request(context, verb, url, check_res=False)
+        
+        return result
+        
+        
+    async def async_fetch_device_statusses(self, device):
+        """Fetch the statusses for a DAB Pumps device, which then constitues the Sensors"""
+    
         serial = device.serial.removesuffix(SIMULATE_SUFFIX_ID)
+
+        context = f"statusses {serial}"
+        verb = "GET"
         url = DABPUMPS_API_URL + f"/dumstate/{serial}"
         
-        _LOGGER.debug(f"DAB Pumps retrieve device statusses for '{device.name}' via GET {url}")
-        request = self._client.build_request("GET", url)
-        response = await self._client.send(request)
-        
-        await self._async_update_diagnostics(f"statusses {serial}", request, response)
-        
-        if not response.is_success:
-            error = f"Unable retrieve device data for '{device.name}', got response {response.status_code} while trying to reach {url}"
-            _LOGGER.debug(error)    # logged as warning after last retry
-            raise DabPumpsApiError(error)
-        
-        result = response.json()
-        if result['res'] != 'OK':
-            # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
-            if result['code'] in ['FORBIDDEN']:
-                error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiRightsError(error)
-            else:
-                error = f"Unable retrieve device data, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
-                _LOGGER.debug(error)    # logged as warning after last retry
-                raise DabPumpsApiError(error)
+        _LOGGER.debug(f"DAB Pumps retrieve device statusses for '{device.name}' via {verb} {url}")
+        result = await self._async_send_json_request(context, verb, url)
         
         return json.loads(result.get('status', '{}'))
         
         
     async def async_change_device_status(self, status, value):
-        
+        """Set a new status value for a DAB Pumps device"""
+
         serial = status.serial.removesuffix(SIMULATE_SUFFIX_ID)
         
+        context = f"set {serial}:{status.key}"
+        verb = "POST"
         url = DABPUMPS_API_URL + f"/dum/{serial}"
         data = {'key': status.key, 'value': str(value) }
         hdrs = {'Content-Type': 'application/json'}
         
-        _LOGGER.debug(f"DAB Pumps set device param for '{status.unique_id}' to '{value}' via POST {url}")
-        request = self._client.build_request("POST", url, json=data, headers=hdrs)
-        response = await self._client.send(request)
+        _LOGGER.debug(f"DAB Pumps set device param for '{status.unique_id}' to '{value}' via {verb} {url}")
+        result = await self._async_send_json_request(context, verb, url, data, hdrs)
         
-        await self._async_update_diagnostics(f"set {serial}:{status.key}", request, response)
+        # If no exception was thrown then the operation was successfull
+        return True
+    
+
+    async def async_fetch_strings(self, lang):
+        """Get string translations"""
+        context = f"localization_{lang}"
+        verb = "GET"
+        url = DABPUMPS_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON"
+        
+        _LOGGER.debug(f"DAB Pumps retrieve language info via {verb} {url}")
+        result = await self._async_send_json_request(context, verb, url)
+    
+        return result.get('messages', {})
+
+
+    async def _async_send_data_request(self, context, verb, url, data=None, hdrs=None, client=None):
+        # GET or POST a request for general data
+        client = client or self._client
+
+        request = client.build_request(verb, url, data=data, headers=hdrs)
+        response = await client.send(request)
+        
+        await self._async_update_diagnostics(context, request, response)
         
         if not response.is_success:
-            error = f"Unable to set status {status.unique_id} to '{value}', got response {response.status_code} while trying to reach {url}"
+            error = f"Unable to perform request, got response {response.status_code} while trying to reach {url}"
+            _LOGGER.debug(error)    # logged as warning after last retry
+            raise DabPumpsApiError(error)
+        
+        return response.text
+
+
+    async def _async_send_json_request(self, context, verb, url, data=None, hdrs=None, check_res=True):
+        # GET or POST a request for JSON data
+        request = self._client.build_request(verb, url, json=data, headers=hdrs)
+        response = await self._client.send(request)
+        
+        await self._async_update_diagnostics(context, request, response)
+        
+        if not response.is_success:
+            error = f"Unable to perform request, got response {response.status_code} while trying to reach {url}"
             _LOGGER.debug(error)    # logged as warning after last retry
             raise DabPumpsApiError(error)
         
         result = response.json()
-        if result['res'] != 'OK':
+        
+        if check_res and result['res'] != 'OK':
+            # BAD RESPONSE: { "res": "ERROR", "code": "FORBIDDEN", "msg": "Forbidden operation", "where": "ROUTE RULE" }
             if result['code'] in ['FORBIDDEN']:
                 error = f"Authorization failed: {result['res']} {result['code']} {result.get('msg','')}"
                 _LOGGER.debug(error)    # logged as warning after last retry
                 raise DabPumpsApiRightsError(error)
             else:
-                error = f"Unable retrieve device data, got response {result['res']} {result['code']} {result.get('message','')} while trying to reach {url}"
+                error = f"Unable to perform request, got response {result['res']} {result['code']} {result.get('msg','')} while trying to reach {url}"
                 _LOGGER.debug(error)    # logged as warning after last retry
                 raise DabPumpsApiError(error)
-
-        return True
         
-    
-    
+        return result
+
+
     async def async_get_diagnostics(self) -> dict[str, Any]:
         if not self._history_store:
             return None

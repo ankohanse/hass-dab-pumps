@@ -166,7 +166,7 @@ class DabPumpsEntityHelper:
     
     def _is_entity_whitelisted(self, params):
         """
-        Determine whether an entry is whitelisted and should be added as sensor
+        Determine whether an entry is whitelisted and should be added as sensor/binary sensor/number/select/switch
         Or is blacklistred and should be ignored
         """
         
@@ -177,6 +177,7 @@ class DabPumpsEntityHelper:
             'PumpDisable',  # group: System Management
             'LatestError'   # group: Errors
         ]
+
         # Blacklisted keys that would otherwise be included by whitelisted groups below:
         keys_blacklist = []
         
@@ -187,8 +188,12 @@ class DabPumpsEntityHelper:
             'ModbusDevice',
             'Errors'
         ]
+
+        # First check if entity is allowed to be viewed according to user_role
+        if self.coordinator.user_role not in params.view:
+            return False
         
-         # First check individual keys
+        # Then check individual keys
         if params.key in keys_whitelist:
             return True
         
@@ -214,8 +219,9 @@ class DabPumpsEntityHelper:
         """
         
         # Is it a switch/select/number config or control entity? 
-        # Needs to have group 'Extra Comfort' and change rights for 'Customer'
-        # or needs to be a specific key that would otherwise be excluded as group
+        # Needs to have change rights the user role
+        # And needs to be in group 'Extra Comfort' or be a specific key
+        # that would otherwise be excluded as group
         keys_config = [
             'PumpDisable'
         ]
@@ -223,19 +229,23 @@ class DabPumpsEntityHelper:
             'Extra Comfort'
         ]
         is_config = False
-        if params.key in keys_config and 'I' in params.change:
-            is_config = True
-        elif params.group in groups_config and 'C' in params.change:
-            is_config = True
+        if self.coordinator.user_role in params.change:
+            if params.key in keys_config:
+                is_config = True
+            elif params.group in groups_config:
+                is_config = True
         
         if is_config:
             if params.type == 'enum':
+                # With exactly 2 possible values that are of ON/OFF type it becomes a switch
                 if len(params.values or []) == 2:
                     if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
                         return Platform.SWITCH
                     
+                # With more values or not of ON/OFF type it becomes a Select
                 return Platform.SELECT
                 
+            # Is it a numeric type?
             elif params.type == 'measure' and params.min is not None and params.max is not None:
                 return Platform.NUMBER
         

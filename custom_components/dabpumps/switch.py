@@ -145,7 +145,6 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         
         # update creation-time only attributes
         if is_create:
-            #AJH
             _LOGGER.debug(f"Create switch entity '{status.key}' ({status.unique_id})")
             
             self._attr_unique_id = status.unique_id
@@ -163,7 +162,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
                manufacturer =  self._device.vendor,
                model = self._device.product,
                serial_number = self._device.serial,
-               sw_version = self._device.version,
+               hw_version = self._device.version,
             )
             changed = True
         
