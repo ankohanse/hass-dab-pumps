@@ -1,5 +1,5 @@
 [![version](https://img.shields.io/github/v/release/ankohanse/hass-dab-pumps?style=for-the-badge)](https://github.com/ankohanse/hass-dab-pumps)
-[![maintained](https://img.shields.io/maintenance/yes/2023?style=for-the-badge)](https://github.com/ankohanse/hass-dab-pumps)
+[![maintained](https://img.shields.io/maintenance/yes/2024?style=for-the-badge)](https://github.com/ankohanse/hass-dab-pumps)
 [![license](https://img.shields.io/github/license/toreamun/amshan-homeassistant?style=for-the-badge)](LICENSE)
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)<br/>
 [![buy_me_a_coffee](https://img.shields.io/badge/If%20you%20like%20it-Buy%20me%20a%20coffee-yellow.svg?style=for-the-badge)](https://www.buymeacoffee.com/ankohanse)
