@@ -73,7 +73,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
         """ Initialize the sensor. """
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, params)
+        DabPumpsEntity.__init__(self, coordinator, params)
         
         # The unique identifier for this sensor within Home Assistant
         self.object_id = object_id
@@ -202,10 +202,4 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
                 self._attr_is_on = False
                 self._attr_state = STATE_OFF
                 self.async_write_ha_state()
-    
-    
-    def _get_string(self, str):
-        # return 'translated' string or original string if not found
-        return self._coordinator.string_map.get(str, str)
-
     
