@@ -78,11 +78,10 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         
         except DabPumpsApiError as e:
             self._errors = f"Failed to connect to DAB Pumps DConnect website: {e}"
-            return False
-        
         except DabPumpsApiAuthError as e:
             self._errors = f"Authentication failed: {e}"
-            return False
+        except Exception as e:
+            self._errors = f"Unknown error: {e}"
         
         return False
     

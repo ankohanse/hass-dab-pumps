@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/ankohanse/hass-dab-pumps/issues",
   "loggers": ["custom_components.dabpumps"],
   "requirements": [],
-  "version": "2024.03.8"
+  "version": "2024.03.9"
 }

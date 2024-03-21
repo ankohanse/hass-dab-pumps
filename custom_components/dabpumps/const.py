@@ -12,7 +12,7 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2024.03.8"
+VERSION="2024.03.9"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"
@@ -29,7 +29,7 @@ CONF_INSTALL_NAME = "install_name"
 CONF_OPTIONS = "options"
 CONF_POLLING_INTERVAL = "polling_interval"
 
-DIAGNOSTICS_REDACT = { CONF_PASSWORD }
+DIAGNOSTICS_REDACT = { CONF_PASSWORD, 'client_secret' }
 
 ATTR_PRODUCT_DESCRIPTION = "Product Description"
 ATTR_DESTINATION_NAME = "Destination Name"
@@ -53,11 +53,14 @@ SWITCH_VALUES_OFF = ['0', 'Disable']
 SWITCH_VALUES_ALL = SWITCH_VALUES_ON + SWITCH_VALUES_OFF
 
 
-DABPUMPS_API_HOST = "dconnect.dabpumps.com"
-DABPUMPS_API_URL = "https://" + DABPUMPS_API_HOST
-API_TOKEN_TIME_MIN = 10 # seconds
-API_RETRY_ATTEMPTS = 10
-API_RETRY_DELAY = 5    # seconds
+DABPUMPS_SSO_URL = "https://dabsso.dabpumps.com"
+DABPUMPS_API_URL = "https://dconnect.dabpumps.com"
+DABPUMPS_API_DOMAIN = "dconnect.dabpumps.com"
+DABPUMPS_API_TOKEN_COOKIE = "dabcsauthtoken"
+DABPUMPS_API_TOKEN_TIME_MIN = 10 # seconds remaining before we re-login
+
+COORDINATOR_RETRY_ATTEMPTS = 10
+COORDINATOR_RETRY_DELAY = 5    # seconds
 
 # Debug: set this constant to True to simulate a configuration with multiple installations for one DAB account
 SIMULATE_MULTI_INSTALL = False
