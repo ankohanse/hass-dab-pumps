@@ -196,7 +196,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 return self.async_create_entry(
                     title="",
                     data = {
-                        CONF_POLLING_INTERVAL: user_input['polling interval']
+                        CONF_POLLING_INTERVAL: user_input['polling_interval']
                     }
                 )
 
