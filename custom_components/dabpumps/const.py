@@ -1,5 +1,6 @@
 """Constants for the DAB Pumps integration."""
 import logging
+import types
 
 from homeassistant.const import (
     CONF_USERNAME,
@@ -12,7 +13,7 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2024.03.9"
+VERSION="2024.04.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"
@@ -23,11 +24,15 @@ HELPER = "Helper"
 DEFAULT_USERNAME = ""
 DEFAULT_PASSWORD = ""
 DEFAULT_POLLING_INTERVAL = 20
+DEFAULT_LANGUAGE = "auto"
 
 CONF_INSTALL_ID = "install_id"
 CONF_INSTALL_NAME = "install_name"
 CONF_OPTIONS = "options"
 CONF_POLLING_INTERVAL = "polling_interval"
+
+MSG_POLLING_INTERVAL = 'polling_interval'
+MSG_LANGUAGE = 'language'
 
 DIAGNOSTICS_REDACT = { CONF_PASSWORD, 'client_secret' }
 
@@ -43,6 +48,29 @@ ATTR_PRODUCT_VERSION = "Vendor Firmware Version"
 ATTR_PRODUCT_BUILD = "Vendor Product Build"
 ATTR_PRODUCT_FEATURES = "Vendor Product Features"
 ATTR_PRODUCT_INSTALL = "Installation Name"
+
+LANGUAGE_AUTO = "auto"
+LANGUAGE_AUTO_FALLBACK = "en"
+LANGUAGE_MAP = {
+    "auto": "Auto",
+    "cs": "Czech",
+    "nl": "Dutch",
+    "en": "English",
+    "fr": "French",
+    "de": "German",
+    "it": "Italian",
+    "pl": "Polish",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "sk": "Slovenian",
+    "es": "Spanish",
+    "sf": "Swedish",
+    # "": "Turkish",
+    # "": "Thai"
+}
+
+LANGUAGE_TEXT_AUTO ="Auto (use system setting: {0})"
+LANGUAGE_TEXT_FALLBACK ="Auto (use default: {0})"
 
 BINARY_SENSOR_VALUES_ON = ['1', 'active']
 BINARY_SENSOR_VALUES_OFF = ['0', 'disactive', 'inactive']
@@ -61,6 +89,12 @@ DABPUMPS_API_TOKEN_TIME_MIN = 10 # seconds remaining before we re-login
 
 COORDINATOR_RETRY_ATTEMPTS = 10
 COORDINATOR_RETRY_DELAY = 5    # seconds
+
+API_LOGIN = types.SimpleNamespace()
+API_LOGIN.DABLIVE_APP_0 = 'DabLive_app_0'
+API_LOGIN.DABLIVE_APP_1 = 'DabLive_app_1'
+API_LOGIN.DCONNECT_APP = 'DConnect_app'
+API_LOGIN.DCONNECT_WEB = 'DConnect_web'
 
 # Debug: set this constant to True to simulate a configuration with multiple installations for one DAB account
 SIMULATE_MULTI_INSTALL = False

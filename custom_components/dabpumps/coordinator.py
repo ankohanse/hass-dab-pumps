@@ -1,5 +1,6 @@
 import asyncio
 import async_timeout
+import json
 import logging
 import re
 
@@ -15,6 +16,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import callback
 from homeassistant.core import HomeAssistant
+from homeassistant.core import async_get_hass
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -106,12 +108,12 @@ class DabPumpsCoordinatorFactory:
         """
     
         # Get properties from the config_entry
-        hass = None
+        hass = async_get_hass()
         install_id = None
         options = {}
         
         # Get a temporary instance of the DabPumpsApi for these credentials
-        api = DabPumpsApiFactory.create(hass, username, password)
+        api = DabPumpsApiFactory.create_temp(hass, username, password)
         
         # Get an instance of our coordinator. This is unique to this install_id
         coordinator = DabPumpsCoordinator(hass, api, install_id, options)
@@ -123,21 +125,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
     def __init__(self, hass, api, install_id, options):
         """Initialize my coordinator."""
-        if hass:
-            super().__init__(
-                hass,
-                _LOGGER,
-                # Name of the data. For logging purposes.
-                name=NAME,
-                # Polling interval. Will only be polled if there are subscribers.
-                update_interval=timedelta(seconds=options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)),
-                update_method=self._async_update_data,
-            )
+        super().__init__(
+            hass,
+            _LOGGER,
+            # Name of the data. For logging purposes.
+            name=NAME,
+            # Polling interval. Will only be polled if there are subscribers.
+            update_interval=timedelta(seconds=options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)),
+            update_method=self._async_update_data,
+        )
 
         self._api = api
         self._install_id = install_id
         self._options = options
-        self._language = 'en'
 
         self._install_map_ts = datetime.min
         self._install_map = {}
@@ -156,7 +156,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # retry counter for diagnosis
         self._retries_needed = [ 0 for r in range(COORDINATOR_RETRY_ATTEMPTS) ]
 
-    
+
     @property
     def string_map(self):
         return self._string_map
@@ -269,7 +269,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 return True;
             
             except Exception as ex:
-                error = ex
+                error = str(ex)
             
             # Log off, end session and retry if possible
             await self._api.async_logout();  
@@ -289,22 +289,38 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
         
     async def _async_detect_data(self):
+        warnings = []
         error = None
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
                 await self._api.async_login()
 
-                # Fetch installation and devices when the cached one expires (once a day)
+                # Attempt to refresh installation details and devices when the cached one expires (once a day)
                 if (datetime.now() - self._device_map_ts).total_seconds() > 86400:
-                    data = await self._api.async_fetch_install_list()
-                    self._process_install_list(data)
-                    self._process_install_data(data)
+                    try:
+                        data = await self._api.async_fetch_install_details(self._install_id)
+                        self._process_install_data(data)
+                    except Exception as e:
+                        # Retry if this is the initial retrieve and not just a refresh
+                        if len(self._device_map) == 0:
+                            raise
 
-                # Fetch device configurations (once a day)
+                        warnings.append(f"Ignoring exception during refresh of devices: {str(e)}")
+                        self._device_map_ts = datetime.now()
+
+                # Attempt to refresh device configurations (once a day)
                 if (datetime.now() - self._config_map_ts).total_seconds() > 86400:
                     for device in self._device_map.values():
-                        data = await self._api.async_fetch_device_config(device)
-                        self._process_device_config_data(device, data)
+                        try:
+                            data = await self._api.async_fetch_device_config(device)
+                            self._process_device_config_data(device, data)
+                        except Exception as e:
+                            # Retry if this is the initial retrieve and not just a refresh
+                            if len(self._config_map) == 0:
+                                raise
+
+                            warnings.append(f"Ignoring exception during refresh of device config: {str(e)}")
+                            self._config_map_ts = datetime.now()
 
                 # Fetch device statusses (always)
                 if (datetime.now() - self._status_map_ts).total_seconds() > 0:
@@ -312,16 +328,37 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         data = await self._api.async_fetch_device_statusses(device)
                         self._process_device_status_data(device, data)
                 
-                # Refresh the list of translations (once a day)
+                # Attempt to refresh the list of translations (once a day)
                 if (datetime.now() - self._string_map_ts).total_seconds() > 86400:
-                    data = await self._api.async_fetch_strings(self._language)
-                    self._process_strings_data(data)
+                    try:
+                        data = await self._api.async_fetch_strings(self.language)
+                        self._process_strings_data(data)
+                    except Exception as e:
+                        # Retry if this is the initial retrieve and not just a refresh
+                        if len(self._string_map) == 0:
+                            raise
+
+                        warnings.append(f"Ignoring exception during refresh of strings: {str(e)}")
+                        self._string_map_ts = datetime.now()
+
+                # Attempt to refresh the list of installations (once a day, just for diagnostocs)
+                if (datetime.now() - self._install_map_ts).total_seconds() > 86400:
+                    try:
+                        data = await self._api.async_fetch_install_list()
+                        self._process_install_list(data, ignore_empty=True)
+                    except Exception as e:
+                        warnings.append(f"Ignoring exception during refresh of installation list: {str(e)}")
+                        self._install_map_ts = datetime.now()
+
+                # only trace warnings if no errors were found
+                if warnings:
+                    _LOGGER.warning('\n'.join(warnings))
 
                 self._retries_needed[retry] += 1
                 return True;
             
             except Exception as ex:
-                error = ex
+                error = str(ex)
             
             # Log off, end session and retry if possible
             await self._api.async_logout();  
@@ -353,7 +390,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 return True
             
             except Exception as ex:
-                error = ex
+                error = str(ex)
             
             # Log off, end session and retry if possible
             await self._api.async_logout();  
@@ -371,8 +408,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._retries_needed[retry] += 1
         return False
 
-    
-    def _process_install_list(self, data):
+
+    def _process_install_list(self, data, ignore_empty=False):
         """
         Get installations list
         """
@@ -409,8 +446,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 install_map[install_id] = install
 
         # Remember this data
-        self._install_map_ts = datetime.now() if len(install_map) > 0 else datetime.min
-        self._install_map = install_map
+        self._install_map_ts = datetime.now()
+
+        if ignore_empty and len(install_map)==0:
+            pass
+        else:
+            self._install_map = install_map
 
 
     def _process_install_data(self, data):
@@ -427,10 +468,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         suffix_name = SIMULATE_SUFFIX_NAME if install_id != install_id_org else ""
         
         # Find the current installation
-        installations = data.get('values', [])
-        installation = next( (ins for ins in installations if ins.get('installation_id', '') == install_id_org), None)
-        if not installation: 
-            raise DabPumpsDataError(f"Could not find configured installation id {install_id_org} in list of installations")
+        installation = data
+        installation_id = installation.get('installation_id', '')
+        if installation_id != install_id_org: 
+            raise DabPumpsDataError(f"Expected installation id {install_id_org} was not found in returned installation details")
 
         # Go through the list of all device definitions for the current installation
         device_map = {}
@@ -476,20 +517,24 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             
             _LOGGER.debug(f"DAB Pumps device found: {device_name} with serial {device_serial}")
             
-        # Also remember the user role within this installation
+        # Also detect the user role within this installation
         user_role = installation.get('user_role', 'CUSTOMER')
 
         # Cleanup device config and device statusses to only keep values that are still part of a device in this installation
         config_map = { k: v for k, v in self._config_map.items() if v.id in config_list }
         status_map = { k: v for k, v in self._status_map.items() if v.serial in serial_list }
+
+        # Sanity check. # Never overwrite a known device_map, config_map or status_map with empty lists
+        if len(device_map) == 0:
+            return
         
-        # Remember/update the found maps
-        self._device_map_ts = datetime.now() if len(device_map) > 0 else datetime.min
+        # Remember/update the found maps.
+        self._device_map_ts = datetime.now()
         self._device_map = device_map
         self._config_map = config_map
         self._status_map = status_map
 
-        self._user_role_ts = datetime.now() if user_role else datetime.min
+        self._user_role_ts = datetime.now()
         self._user_role = user_role
 
 
@@ -499,14 +544,14 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         config_map = {}
 
-        conf_id = data.get('configuration_id', '') or device.config_id
+        conf_id = data.get('configuration_id', '')
         conf_name = data.get('name') or f"config{conf_id}"
         conf_label = data.get('label') or f"config{conf_id}"
         conf_descr = data.get('description') or f"config {conf_id}"
         conf_params = {}
 
-        if not conf_id: 
-            raise DabPumpsDataError(f"Could not find configuration attribute 'configuration_id'")
+        if conf_id != device.config_id: 
+            raise DabPumpsDataError(f"Expected configuration id {device.config_id} was not found in returned configuration data")
             
         meta = data.get('metadata') or {}
         meta_params = meta.get('params') or []
@@ -562,7 +607,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Process status data for a device
         """
         status_map = {}
-        values = data.get('values') or {}
+        status = data.get('status') or "{}"
+        values = json.loads(status)
 
         for item_key, item_val in values.items():
             # the value 'h' is used when a property is not available/supported
@@ -582,6 +628,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 val = item_val,
             )
             status_map[entity_id] = item
+
+        _LOGGER.debug(f"DAB Pumps statusses found for '{device.name}' with {len(status_map)} values")        
         
         # Merge with statusses from other devices
         self._status_map_ts = datetime.now()

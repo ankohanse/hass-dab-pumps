@@ -159,7 +159,7 @@ class DabPumpsEntityHelper:
             except Exception as  ex:
                 _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
         
-        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self.install_name} with {len(device_map)} devices")
+        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self.install_name}' with {len(device_map)} devices")
         if entities:
             async_add_entities(entities)
     
@@ -198,7 +198,7 @@ class DabPumpsEntityHelper:
             return True
         
         if params.key in keys_blacklist:
-            _LOGGER.debug(f"Skip create sensor for '{params.key}'; it is blacklisted'.")
+            #_LOGGER.debug(f"Skip create sensor for '{params.key}'; it is blacklisted'.")
             return False
         
         # Then check groups
@@ -206,7 +206,7 @@ class DabPumpsEntityHelper:
             return True
 
         if params.group in groups_blacklist:
-            _LOGGER.debug(f"Skip create sensor for '{params.key}'; its group '{params.group}' is blacklisted'.")
+            #_LOGGER.debug(f"Skip create sensor for '{params.key}'; its group '{params.group}' is blacklisted'.")
             return False
         
         # If not blacklisted by any rule above, then it is whitelisted
