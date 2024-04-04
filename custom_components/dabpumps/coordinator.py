@@ -26,6 +26,7 @@ from homeassistant.helpers.update_coordinator import (
 from homeassistant.const import (
     CONF_USERNAME,
     CONF_PASSWORD,
+    CONF_LANGUAGE,
 )
 from .api import (
     DabPumpsApiFactory,
@@ -40,6 +41,10 @@ from .const import (
     NAME,
     COORDINATOR,
     DEFAULT_POLLING_INTERVAL,
+    DEFAULT_LANGUAGE,
+    LANGUAGE_MAP,
+    LANGUAGE_AUTO,
+    LANGUAGE_AUTO_FALLBACK,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
@@ -143,6 +148,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._status_map_ts = datetime.min
         self._status_map = {}
         self._string_map_ts = datetime.min
+        self._string_map_lang = None
         self._string_map = {}
         self._user_role_ts = datetime.min
         self._user_role = 'CUSTOMER'
@@ -159,6 +165,25 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     @property
     def user_role(self):
         return self._user_role[0] # only use the first character
+    
+
+    @property
+    def language(self):
+        lang = self._options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
+        if lang == LANGUAGE_AUTO:
+            system_lang = self.system_language
+            lang = system_lang if system_lang in LANGUAGE_MAP else LANGUAGE_AUTO_FALLBACK
+    
+        return lang
+    
+
+    @property
+    def system_language(self):
+        """
+        Get HASS system language as set under Settings->System->General.
+        Unless that language is not allowed in DConnect DAB LANGUAGE_MAP, in that case fallback to DEFAULT_LANGUAGE
+        """
+        return self.hass.config.language.split('-', 1)[0] # split from 'en-GB' to just 'en'
 
 
     async def async_config_flow_data(self):
@@ -567,12 +592,14 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Get translated strings from data
         """
+        language = data.get('bundle', DEFAULT_LANGUAGE)
         messages = data.get('messages', {})
         string_map = { k: v for k, v in messages.items() }
         
-        _LOGGER.debug(f"DAB Pumps strings found: {len(string_map)}")
+        _LOGGER.debug(f"DAB Pumps strings found: {len(string_map)} in language '{language}'")
         
         self._string_map_ts = datetime.now() if len(string_map) > 0 else datetime.min
+        self._string_map_lang = language
         self._string_map = string_map
 
     
@@ -608,6 +635,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "status_map_ts": self._status_map_ts,
                 "status_map": status_map,
                 "string_map_ts": self._string_map_ts,
+                "string_map_lang": self._string_map_lang,
                 "string_map": self._string_map,
                 "user_role_ts": self._user_role_ts,
                 "user_role": self._user_role

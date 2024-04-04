@@ -5,7 +5,7 @@ import logging
 import json
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigType
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
@@ -53,11 +53,7 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the component."""
-    hass.data[DOMAIN] = {
-        API: {},         # key is username+hash(password)
-        COORDINATOR: {}, # key is install_id
-        HELPER: {}       # key is install_id
-    }
+    _clear_hass_data(hass)
 
     for entry in hass.config_entries.async_entries(DOMAIN):
         if not isinstance(entry.unique_id, str):
@@ -65,6 +61,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 entry, unique_id=str(entry.unique_id)
             )
     return True
+
+
+def _clear_hass_data(hass):
+    hass.data[DOMAIN] = {
+        API: {},         # key is username+hash(password)
+        COORDINATOR: {}, # key is install_id
+        HELPER: {}       # key is install_id
+    }
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -76,7 +80,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     install_id = config_entry.data[CONF_INSTALL_ID]
     install_name = config_entry.data[CONF_INSTALL_NAME]
     options = config_entry.options
-    
+
     _LOGGER.info(f"Setup config entry for installation '{install_name}' ({install_id})")
     
     # Get an instance of the DabPumpsCoordinator for this install_id
@@ -91,15 +95,25 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     # Forward to all platforms (sensor, switch, ...)
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+
+    # Reload entry when it is updated
+    # config_entry.async_on_unload(config_entry.add_update_listener(_async_update_listener))
+    config_entry.add_update_listener(_async_update_listener)
     
     return True
 
 
-async def async_update_options(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
-    """Update options."""
-    await hass.config_entries.async_reload(config_entry.entry_id)
+async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
+    success = await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
+    if success:
+        # Force re-create of Coordinator and Api on a subsequent async_setup_entry
+        _clear_hass_data(hass)
+
+    return success
 
 
-async def options_update_listener(hass: core.HomeAssistant, config_entry: config_entries.ConfigEntry):
-    """Handle options update."""
+async def _async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry) -> None:
+    """Fired after update of Config Options."""
+
+    _LOGGER.debug(f"Detect update of config options {config_entry.options}")
     await hass.config_entries.async_reload(config_entry.entry_id)

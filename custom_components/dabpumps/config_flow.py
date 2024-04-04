@@ -19,6 +19,7 @@ from homeassistant.helpers.selector import selector
 from homeassistant.const import (
     CONF_USERNAME,
     CONF_PASSWORD,
+    CONF_LANGUAGE,
 )
 
 from .const import (
@@ -26,9 +27,17 @@ from .const import (
     DEFAULT_USERNAME,
     DEFAULT_PASSWORD,
     DEFAULT_POLLING_INTERVAL,
+    DEFAULT_LANGUAGE,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_POLLING_INTERVAL,
+    MSG_POLLING_INTERVAL,
+    MSG_LANGUAGE,
+    LANGUAGE_MAP,
+    LANGUAGE_AUTO,
+    LANGUAGE_AUTO_FALLBACK,
+    LANGUAGE_TEXT_AUTO,
+    LANGUAGE_TEXT_FALLBACK,
 )
 
 from .api import (
@@ -150,6 +159,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                     options = {
                         CONF_POLLING_INTERVAL: DEFAULT_POLLING_INTERVAL,
+                        CONF_LANGUAGE: DEFAULT_LANGUAGE,
                     }
                 )
 
@@ -182,7 +192,31 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Initialize options flow."""
         self.config_entry = config_entry
+        if not self.config_entry.options:
+            self.config_entry.options = {}
+
+        self._polling_interval = None
+        self._language_code = None
+        self._language_name = None
         self._errors = None
+
+        # Display actual system language name or fallback language name inside the LANGUAGE_MAP options
+        self._language_map = LANGUAGE_MAP
+        self._language_map[LANGUAGE_AUTO] = self._get_language_auto_text()
+
+
+    def _get_language_auto_text(self):
+        username = self.config_entry.data[CONF_USERNAME]
+        password = self.config_entry.data[CONF_PASSWORD]
+        coordinator = DabPumpsCoordinatorFactory.create_temp(username, password)
+        system_language_code = coordinator.system_language
+
+        if system_language_code in LANGUAGE_MAP:
+            system_language_name = LANGUAGE_MAP[system_language_code]
+            return LANGUAGE_TEXT_AUTO.format(system_language_name)
+        else:
+            fallback_language_name = LANGUAGE_MAP[LANGUAGE_AUTO_FALLBACK]
+            return LANGUAGE_TEXT_FALLBACK.format(fallback_language_name)
 
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
@@ -190,26 +224,44 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             _LOGGER.debug(f"Options flow handle user input")
             self._errors = []
-            
-            if not self._errors:
+
+            self._polling_interval = user_input[MSG_POLLING_INTERVAL]
+            self._language_name = user_input.get(MSG_LANGUAGE, None)
+            self._language_code = next( (code for code,name in self._language_map.items() if name == self._language_name), None)
+
+            # Do we have everything we need?
+            if not self._errors and self._language_code:
+
                 # Value of data will be set on the options property of the config_entry instance.
-                return self.async_create_entry(
-                    title="",
-                    data = {
-                        CONF_POLLING_INTERVAL: user_input['polling_interval']
-                    }
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    options = {
+                        CONF_POLLING_INTERVAL: self._polling_interval,
+                        CONF_LANGUAGE: self._language_code,
+                    } 
                 )
+                return self.async_create_entry(title=None, data=None)
 
             _LOGGER.error(f"Error: {self._errors}")
-            
+        
+        else:
+            self._polling_interval = self.config_entry.options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)
+            self._language_code = self.config_entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
+            self._language_name = next( (name for code,name in self._language_map.items() if code == self._language_code), LANGUAGE_MAP[DEFAULT_LANGUAGE])
+
         # Show the form with the options
         _LOGGER.debug(f"Options flow show user input form")
-        
+
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(CONF_POLLING_INTERVAL, default=self.config_entry.options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)): 
-                    vol.All(vol.Coerce(int), vol.Range(min=5))
+                vol.Required(MSG_POLLING_INTERVAL, default=self._polling_interval): 
+                    vol.All(vol.Coerce(int), vol.Range(min=5)),
+                vol.Required(MSG_LANGUAGE, default=self._language_name): selector({
+                   "select": {
+                      "options": [ name for name in self._language_map.values() ]
+                   }
+                })
             }),
             errors = self._errors
         )
