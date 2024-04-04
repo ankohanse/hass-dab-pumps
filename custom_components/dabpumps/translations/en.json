@@ -29,7 +29,8 @@
             "init": {
                 "title":"General Options",
                 "data": {
-                    "polling_interval": "Polling interval to update sensors (seconds)"
+                    "polling_interval": "Polling interval to update sensors (seconds)",
+                    "language": "Language"
                 }
             }
         },
