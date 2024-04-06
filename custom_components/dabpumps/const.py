@@ -13,7 +13,7 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2024.04.1"
+VERSION="2024.04.2"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
 
 HUB = "Hub"

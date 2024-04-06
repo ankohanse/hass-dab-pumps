@@ -338,7 +338,7 @@ class DabPumpsApi:
         install_id_org = install_id.removesuffix(SIMULATE_SUFFIX_ID)
         context = f"installation list"
         
-        data = await self._history_store.async_load() or {}
+        data = await self._history_store.async_get_data() or {}
         installation_list = data.get("details", {}).get(context, {})
         installations = installation_list.get("response", {}).get("json", {}).get("values", [])
 
@@ -464,7 +464,7 @@ class DabPumpsApi:
         if not self._history_store:
             return None
             
-        data = await self._history_store.async_load() or {}
+        data = await self._history_store.async_get_data() or {}
         counter = data.get("counter", {})
         history = data.get("history", [])
         details = data.get("details", {})
@@ -500,7 +500,7 @@ class DabPumpsApi:
             if not self._history_store:
                 return None
             
-            data = await self._history_store.async_load() or {}
+            data = await self._history_store.async_get_data() or {}
             counter = data.get("counter", {})
             history = data.get("history", [])
             details = data.get("details", {})
@@ -519,7 +519,7 @@ class DabPumpsApi:
             data["history"] = history
             data["counter"] = counter
             data["details"] = details
-            await self._history_store.async_save(data)
+            await self._history_store.async_set_data(data)
 
         # Create the worker task to update diagnostics in the background,
         # but do not let main loop wait for it to finish
@@ -564,7 +564,7 @@ class DabPumpsApiHistoryStore(Store[dict]):
         return data
     
 
-    async def async_load(self):
+    async def async_get_data(self):
         """Load the persisted api_history file and return the data specific for this api instance"""
         data = await super().async_load() or {}
         data_self = data.get(self._key, {})
@@ -572,7 +572,7 @@ class DabPumpsApiHistoryStore(Store[dict]):
         return data_self
     
 
-    async def async_save(self, data_self):
+    async def async_set_data(self, data_self):
         """Save the data specific for this api instance into the persisted api_history file"""
         data = await super().async_load() or {}
         data[self._key] = data_self
