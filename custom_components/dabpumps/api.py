@@ -98,10 +98,8 @@ class DabPumpsApi:
             self._history_key = username.lower()
             self._history_store = DabPumpsApiHistoryStore(hass, self._history_key)
 
-            # DO NOT cleanup history store after each restart.
-            # we rely on it now if communication to DAB Pumps fails
-            #
-            # self._hass.async_create_task(self._history_store.async_remove())
+            # Cleanup the history store after each restart.
+            asyncio.run_coroutine_threadsafe(self._async_cleanup_diagnostics(), hass.loop)
         else:
             # Use from a temporary coordinator during config-flow first time setup of component
             self._hass = None
@@ -527,6 +525,25 @@ class DabPumpsApi:
             self._hass.async_create_task(_async_worker(self, timestamp, context, request, response, token))
 
 
+    async def _async_cleanup_diagnostics(self):
+        # worker function
+        async def _async_worker(self):
+            # Sanity check
+            if not self._history_store:
+                return None
+            
+            # Only the counter part is reset.
+            # We retain the history and details information as we rely on it if communication to DAB Pumps fails.
+            data = await self._history_store.async_get_data() or {}
+            data["counter"] = {}
+            await self._history_store.async_set_data(data)
+
+        # Create the worker task to update diagnostics in the background,
+        # but do not let main loop wait for it to finish
+        if self._hass:
+            self._hass.async_create_task(_async_worker(self))
+
+
 class DabPumpsApiAuthError(Exception):
     """Exception to indicate authentication failure."""
 
@@ -555,7 +572,7 @@ class DabPumpsApiHistoryStore(Store[dict]):
     
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
         """Migrate the history store data"""
-        if old_major_version < 2:
+        if old_major_version <= 1:
             # version 1 had a flat structure and did not take into account to have multiple installations (with different username+password)
             data = {
                 self._key: old_data
