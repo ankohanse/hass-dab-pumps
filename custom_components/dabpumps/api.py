@@ -572,11 +572,16 @@ class DabPumpsApiHistoryStore(Store[dict]):
     
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
         """Migrate the history store data"""
+
         if old_major_version <= 1:
             # version 1 had a flat structure and did not take into account to have multiple installations (with different username+password)
-            data = {
+            old_data = {
                 self._key: old_data
             }
+
+        if old_major_version <= 2:
+            # version 2 is the current version. No migrate needed
+            data = old_data
 
         return data
     

@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.core import async_get_hass
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
@@ -156,6 +157,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # retry counter for diagnosis
         self._retries_needed = [ 0 for r in range(COORDINATOR_RETRY_ATTEMPTS) ]
 
+        # Cached data in case communication to DAB Pumps fails
+        self._hass = hass
+        self._store_key = install_id
+        self._store = DabPumpsCoordinatorStore(hass, self._store_key)
+
 
     @property
     def string_map(self):
@@ -263,7 +269,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     
                 # Fetch the list of installations
                 data = await self._api.async_fetch_install_list()
-                self._process_install_list(data)
+                await self._async_process_install_list(data)
                 
                 self._retries_needed[retry] += 1
                 return True;
@@ -299,7 +305,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 if (datetime.now() - self._device_map_ts).total_seconds() > 86400:
                     try:
                         data = await self._api.async_fetch_install_details(self._install_id)
-                        self._process_install_data(data)
+                        await self._async_process_install_data(data)
                     except Exception as e:
                         # Retry if this is the initial retrieve and not just a refresh
                         if len(self._device_map) == 0:
@@ -313,7 +319,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     for device in self._device_map.values():
                         try:
                             data = await self._api.async_fetch_device_config(device)
-                            self._process_device_config_data(device, data)
+                            await self._async_process_device_config_data(device, data)
                         except Exception as e:
                             # Retry if this is the initial retrieve and not just a refresh
                             if len(self._config_map) == 0:
@@ -326,13 +332,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 if (datetime.now() - self._status_map_ts).total_seconds() > 0:
                     for device in self._device_map.values():
                         data = await self._api.async_fetch_device_statusses(device)
-                        self._process_device_status_data(device, data)
+                        await self._async_process_device_status_data(device, data)
                 
                 # Attempt to refresh the list of translations (once a day)
                 if (datetime.now() - self._string_map_ts).total_seconds() > 86400:
                     try:
                         data = await self._api.async_fetch_strings(self.language)
-                        self._process_strings_data(data)
+                        await self._async_process_strings_data(data)
                     except Exception as e:
                         # Retry if this is the initial retrieve and not just a refresh
                         if len(self._string_map) == 0:
@@ -345,7 +351,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 if (datetime.now() - self._install_map_ts).total_seconds() > 86400:
                     try:
                         data = await self._api.async_fetch_install_list()
-                        self._process_install_list(data, ignore_empty=True)
+                        await self._async_process_install_list(data, ignore_empty=True)
                     except Exception as e:
                         warnings.append(f"Ignoring exception during refresh of installation list: {str(e)}")
                         self._install_map_ts = datetime.now()
@@ -409,7 +415,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return False
 
 
-    def _process_install_list(self, data, ignore_empty=False):
+    async def _async_process_install_list(self, data, ignore_empty=False):
         """
         Get installations list
         """
@@ -453,8 +459,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         else:
             self._install_map = install_map
 
+            # If we reach this point no problems were found with the data. Cache it.
+            context = f"installation list"
+            await self._async_update_cache(context, data)
 
-    def _process_install_data(self, data):
+
+
+    async def _async_process_install_data(self, data):
         """
         Update device data for the installation
         """
@@ -536,9 +547,14 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         self._user_role_ts = datetime.now()
         self._user_role = user_role
+                
+        # If we reach this point no problems were found with the data. Cache it.
+        context = f"installation {install_id}"
+        await self._async_update_cache(context, data)
 
 
-    def _process_device_config_data(self, device, data):
+
+    async def _async_process_device_config_data(self, device, data):
         """
         Update device config for the installation
         """
@@ -600,9 +616,14 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # Merge with configurations from other devices
         self._config_map_ts = datetime.now()
         self._config_map.update(config_map)
+        
+        # If we reach this point no problems were found with the data. Cache it.
+        context = f"configuration {conf_id}"
+        await self._async_update_cache(context, data)
 
 
-    def _process_device_status_data(self, device, data):
+
+    async def _async_process_device_status_data(self, device, data):
         """
         Process status data for a device
         """
@@ -635,8 +656,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._status_map_ts = datetime.now()
         self._status_map.update(status_map)
 
+        # we skip caching for volatile data like the device statusses
+        pass
 
-    def _process_strings_data(self, data):
+
+    async def _async_process_strings_data(self, data):
         """
         Get translated strings from data
         """
@@ -649,6 +673,29 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._string_map_ts = datetime.now() if len(string_map) > 0 else datetime.min
         self._string_map_lang = language
         self._string_map = string_map
+        
+        # we skip caching for too elaborate data like the strings
+        pass
+
+
+    async def _async_update_cache(self, context, data):
+        # worker function
+        async def _async_worker(self, context, data):
+            if not self._store:
+                return None
+            
+            store = await self._store.async_get_data() or {}
+            cache = store.get("cache", {})
+            cache[context] = { "ts": datetime.now() } | async_redact_data(data, DIAGNOSTICS_REDACT)
+            
+            store["cache"] = cache
+            await self._store.async_set_data(store)
+
+        # Create the worker task to update diagnostics in the background,
+        # but do not let main loop wait for it to finish
+        if self._hass:
+            data["ts"] = datetime.now()
+            self._hass.async_create_task(_async_worker(self, context, data))
 
     
     async def async_get_diagnostics(self) -> dict[str, Any]:
@@ -702,4 +749,44 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 class DabPumpsDataError(Exception):
     """Exception to indicate generic data failure."""    
+
+
+class DabPumpsCoordinatorStore(Store[dict]):
+    
+    _STORAGE_VERSION_MAJOR = 1
+    _STORAGE_VERSION_MINOR = 0
+    _STORAGE_KEY = DOMAIN + ".coordinator"
+    
+    def __init__(self, hass, store_key):
+        super().__init__(
+            hass, 
+            key=self._STORAGE_KEY, 
+            version=self._STORAGE_VERSION_MAJOR, 
+            minor_version=self._STORAGE_VERSION_MINOR
+        )
+        self._store_key = store_key
+
+    
+    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
+        """Migrate the history store data"""
+
+        if old_major_version <= 1:
+            # version 1 is the current version. No migrate needed
+            data = old_data
+
+        return data
+    
+
+    async def async_get_data(self):
+        """Load the persisted coordinator_cache file and return the data specific for this coordinator instance"""
+        data = await super().async_load() or {}
+        data_self = data.get(self._store_key, {})
+        return data_self
+    
+
+    async def async_set_data(self, data_self):
+        """Save the data specific for this coordinator instance into the persisted coordinator_cache file"""
+        data = await super().async_load() or {}
+        data[self._store_key] = data_self
+        await super().async_save(data)
     
