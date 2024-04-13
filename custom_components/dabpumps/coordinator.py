@@ -268,8 +268,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 await self._api.async_login()
                     
                 # Fetch the list of installations
-                data = await self._api.async_fetch_install_list()
-                await self._async_process_install_list(data)
+                await self._async_detect_installations(ignore_exception=False)
                 
                 self._retries_needed[retry] += 1
                 return True;
@@ -302,64 +301,21 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 await self._api.async_login()
 
                 # Attempt to refresh installation details and devices when the cached one expires (once a day)
-                if (datetime.now() - self._device_map_ts).total_seconds() > 86400:
-                    try:
-                        data = await self._api.async_fetch_install_details(self._install_id)
-                        await self._async_process_install_data(data)
-                    except Exception as e:
-                        # Retry if this is the initial retrieve and not just a refresh
-                        if len(self._device_map) == 0:
-                            raise
-
-                        warnings.append(f"Ignoring exception during refresh of devices: {str(e)}")
-                        self._device_map_ts = datetime.now()
+                await self._async_detect_install_details()
 
                 # Attempt to refresh device configurations (once a day)
-                if (datetime.now() - self._config_map_ts).total_seconds() > 86400:
-                    for device in self._device_map.values():
-                        try:
-                            data = await self._api.async_fetch_device_config(device)
-                            await self._async_process_device_config_data(device, data)
-                        except Exception as e:
-                            # Retry if this is the initial retrieve and not just a refresh
-                            if len(self._config_map) == 0:
-                                raise
-
-                            warnings.append(f"Ignoring exception during refresh of device config: {str(e)}")
-                            self._config_map_ts = datetime.now()
+                await self._async_detect_device_configs()
 
                 # Fetch device statusses (always)
-                if (datetime.now() - self._status_map_ts).total_seconds() > 0:
-                    for device in self._device_map.values():
-                        data = await self._api.async_fetch_device_statusses(device)
-                        await self._async_process_device_status_data(device, data)
-                
-                # Attempt to refresh the list of translations (once a day)
-                if (datetime.now() - self._string_map_ts).total_seconds() > 86400:
-                    try:
-                        data = await self._api.async_fetch_strings(self.language)
-                        await self._async_process_strings_data(data)
-                    except Exception as e:
-                        # Retry if this is the initial retrieve and not just a refresh
-                        if len(self._string_map) == 0:
-                            raise
+                await self._async_detect_device_statusses()
 
-                        warnings.append(f"Ignoring exception during refresh of strings: {str(e)}")
-                        self._string_map_ts = datetime.now()
+                # Attempt to refresh the list of translations (once a day)
+                await self._async_detect_strings()
 
                 # Attempt to refresh the list of installations (once a day, just for diagnostocs)
-                if (datetime.now() - self._install_map_ts).total_seconds() > 86400:
-                    try:
-                        data = await self._api.async_fetch_install_list()
-                        await self._async_process_install_list(data, ignore_empty=True)
-                    except Exception as e:
-                        warnings.append(f"Ignoring exception during refresh of installation list: {str(e)}")
-                        self._install_map_ts = datetime.now()
+                await self._async_detect_installations(ignore_exception=True)
 
-                # only trace warnings if no errors were found
-                if warnings:
-                    _LOGGER.warning('\n'.join(warnings))
-
+                # Keep track of how many retries were needed until success
                 self._retries_needed[retry] += 1
                 return True;
             
@@ -389,7 +345,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             try:
                 await self._api.async_login()
                 
-                # Fetch a new list of installations when the cached one expires
+                # Attempt to change the device status via the API
                 await self._api.async_change_device_status(status, value)
 
                 self._retries_needed[retry] += 1
@@ -413,6 +369,151 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         self._retries_needed[retry] += 1
         return False
+
+
+    async def _async_detect_install_details(self):
+        """
+        Attempt to refresh installation details and devices when the cached one expires (once a day)
+        """
+        if (datetime.now() - self._device_map_ts).total_seconds() < 86400:
+            # Not yet expired
+            return
+        
+        # Try to retrieve via API
+        context = f"installation {self._install_id}"
+        try:
+            data = await self._api.async_fetch_install_details(self._install_id)
+            await self._async_process_install_data(data)
+            await self._async_update_cache(context, data)
+
+        except Exception as e:
+            if len(self._device_map) > 0:
+                # Ignore problems if this is just a periodic refresh
+                pass
+            else:
+                # Retry from persisted cache if this is the initial retrieve
+                try:
+                    data = await self._async_fetch_from_cache(context)
+                    await self._async_process_install_data(data)
+
+                except Exception:
+                    # Force retry in calling function by raising original exception
+                    raise e
+
+        # If we reach this point, then all devices have been fetched/refreshed
+        self._device_map_ts = datetime.now()
+
+
+    async def _async_detect_device_configs(self):
+        """
+        Attempt to refresh device configurations (once a day)
+        """
+        if (datetime.now() - self._config_map_ts).total_seconds() < 86400:
+            # Not yet expired
+            return
+        
+        for device in self._device_map.values():
+
+            # First try to retrieve from API
+            context = f"configuration {device.config_id}"
+            try:
+                data = await self._api.async_fetch_device_config(device)
+                await self._async_process_device_config_data(device, data)
+                await self._async_update_cache(context, data)
+
+            except Exception as e:
+                if device.config_id in self._config_map:
+                    # Ignore problems if this is just a refresh
+                    pass
+                else:
+                    # Retry from persisted cache if this is the initial retrieve
+                    try:
+                        data = await self._async_fetch_from_cache(context)
+                        await self._async_process_device_config_data(device, data)
+                    except Exception:
+                        # Force retry in calling function by raising original exception
+                        raise e
+                    
+        # If we reach this point, then all device configs have been fetched/refreshed
+        self._config_map_ts = datetime.now()
+
+
+    async def _async_detect_device_statusses(self):
+        """
+        Fetch device statusses (always)
+        """
+        if (datetime.now() - self._status_map_ts).total_seconds() < 0:
+            # Not yet expired
+            return
+        
+        for device in self._device_map.values():
+            try:
+                data = await self._api.async_fetch_device_statusses(device)
+                await self._async_process_device_status_data(device, data)
+
+                # do not persits volatile data in the cache file
+
+            except Exception as e:
+                # Force retry in calling function by raising original exception
+                raise e
+
+        # If we reach this point, then all device statusses have been fetched/refreshed
+        self._status_map_ts = datetime.now()
+
+
+    async def _async_detect_strings(self):
+        """
+        Attempt to refresh the list of translations (once a day)
+        """
+        if (datetime.now() - self._string_map_ts).total_seconds() < 86400:
+            # Not yet expired
+            return
+        
+        context = "localization_{self.language}"
+        try:
+            data = await self._api.async_fetch_strings(self.language)
+            await self._async_process_strings_data(data)
+            await self._async_update_cache(context, data)
+
+        except Exception as e:
+            # Ignore problems if this is just a refresh
+            if len(self._string_map) > 0:
+                pass
+            else:
+                 # Retry from persisted cache if this is the initial retrieve
+                try:
+                    data = await self._async_fetch_from_cache(context)
+                    await self._async_process_strings_data(data)
+                except Exception:
+                    # Force retry in calling function by raising original exception
+                    raise e
+
+        # If we reach this point, then all strings have been fetched/refreshed 
+        self._string_map_ts = datetime.now()
+
+
+    async def _async_detect_installations(self, ignore_exception=False):
+        """
+        Attempt to refresh the list of installations (once a day, just for diagnostocs)
+        """
+        if (datetime.now() - self._install_map_ts).total_seconds() < 86400:
+            # Not yet expired
+            return
+        
+        # First try to retrieve from API.
+        # Make sure not to overwrite data in dabpumps.api_history file when an empty list is returned.
+        context = "installation list"
+        try:
+            data = await self._api.async_fetch_install_list()
+            await self._async_process_install_list(data, ignore_empty=True)
+            await self._async_update_cache(context, data)
+
+        except Exception as e:
+            if not ignore_exception:
+                raise
+
+        # If we reach this point, then installation list been fetched/refreshed/ignored
+        self._install_map_ts = datetime.now()
 
 
     async def _async_process_install_list(self, data, ignore_empty=False):
@@ -458,11 +559,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             pass
         else:
             self._install_map = install_map
-
-            # If we reach this point no problems were found with the data. Cache it.
-            context = f"installation list"
-            await self._async_update_cache(context, data)
-
 
 
     async def _async_process_install_data(self, data):
@@ -547,11 +643,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         self._user_role_ts = datetime.now()
         self._user_role = user_role
-                
-        # If we reach this point no problems were found with the data. Cache it.
-        context = f"installation {install_id}"
-        await self._async_update_cache(context, data)
-
 
 
     async def _async_process_device_config_data(self, device, data):
@@ -616,11 +707,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # Merge with configurations from other devices
         self._config_map_ts = datetime.now()
         self._config_map.update(config_map)
-        
-        # If we reach this point no problems were found with the data. Cache it.
-        context = f"configuration {conf_id}"
-        await self._async_update_cache(context, data)
-
 
 
     async def _async_process_device_status_data(self, device, data):
@@ -656,9 +742,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._status_map_ts = datetime.now()
         self._status_map.update(status_map)
 
-        # we skip caching for volatile data like the device statusses
-        pass
-
 
     async def _async_process_strings_data(self, data):
         """
@@ -673,9 +756,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._string_map_ts = datetime.now() if len(string_map) > 0 else datetime.min
         self._string_map_lang = language
         self._string_map = string_map
-        
-        # we skip caching for too elaborate data like the strings
-        pass
 
 
     async def _async_update_cache(self, context, data):
@@ -696,6 +776,17 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if self._hass:
             data["ts"] = datetime.now()
             self._hass.async_create_task(_async_worker(self, context, data))
+
+    
+    async def _async_fetch_from_cache(self, context):
+        if not self._store:
+            return {}
+        
+        store = await self._store.async_get_data() or {}
+        cache = store.get("cache", {})
+        data = cache.get(context, {})
+
+        return data
 
     
     async def async_get_diagnostics(self) -> dict[str, Any]:
