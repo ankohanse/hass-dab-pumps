@@ -127,14 +127,14 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
             attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
             attr_min = round(float(self._params.min) * self._params.weight, attr_precision)
             attr_max = round(float(self._params.max) * self._params.weight, attr_precision)
-            attr_val = round(float(status.val) * self._params.weight, attr_precision)
+            attr_val = round(float(status.val) * self._params.weight, attr_precision) if status.val!=None else None
             attr_step = self._params.weight
         else:
             # Convert to int
             attr_precision = 0
             attr_min = int(self._params.min)
             attr_max = int(self._params.max)
-            attr_val = int(status.val)
+            attr_val = int(status.val) if status.val!=None else None
             attr_step = self.get_number_step()
         
         # update creation-time only attributes

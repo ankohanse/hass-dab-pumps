@@ -123,7 +123,7 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
 
         # Process any changes
         changed = False
-        attr_val = self._dict.get(status.val, status.val)
+        attr_val = self._dict.get(status.val, status.val) if status.val!=None else None
 
         # update creation-time only attributes
         if is_create:

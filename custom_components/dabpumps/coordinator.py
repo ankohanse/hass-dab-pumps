@@ -5,7 +5,7 @@ import logging
 import re
 
 from collections import namedtuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from homeassistant.components.diagnostics import REDACTED
@@ -298,7 +298,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         error = None
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
-                await self._api.async_login()
+                try:
+                    await self._api.async_login()
+                except:
+                    if len(self._device_map) > 0:
+                        # Force retry in loop by raising original exception
+                        raise
+                    else:
+                        # Ignore and use persisted cached data if this is the initial retrieve
+                        pass
 
                 # Attempt to refresh installation details and devices when the cached one expires (once a day)
                 await self._async_detect_install_details()
@@ -447,15 +455,26 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         for device in self._device_map.values():
+
+            # First try to retrieve from API
+            context = f"statusses {device.serial}"
             try:
                 data = await self._api.async_fetch_device_statusses(device)
                 await self._async_process_device_status_data(device, data)
-
-                # do not persits volatile data in the cache file
+                await self._async_update_cache(context, data)
 
             except Exception as e:
-                # Force retry in calling function by raising original exception
-                raise e
+                if any(status.serial==device.serial for status in self._status_map.values()):
+                    # Ignore problems if this is just a refresh
+                    pass
+                else:
+                    # Retry from persisted cache if this is the initial retrieve.
+                    try:
+                        data = await self._async_fetch_from_cache(context)
+                        await self._async_process_device_status_data(device, data)
+                    except Exception:
+                        # Force retry in calling function by raising original exception
+                        raise e
 
         # If we reach this point, then all device statusses have been fetched/refreshed
         self._status_map_ts = datetime.now()
@@ -469,7 +488,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
         
-        context = "localization_{self.language}"
+        context = f"localization_{self.language}"
         try:
             data = await self._api.async_fetch_strings(self.language)
             await self._async_process_strings_data(data)
@@ -502,7 +521,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         # First try to retrieve from API.
         # Make sure not to overwrite data in dabpumps.api_history file when an empty list is returned.
-        context = "installation list"
+        context = f"installation list"
         try:
             data = await self._api.async_fetch_install_list()
             await self._async_process_install_list(data, ignore_empty=True)
@@ -716,11 +735,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         status_map = {}
         status = data.get('status') or "{}"
         values = json.loads(status)
+        
+        # determine whether the values are still valid.
+        # Expired values can happen when using fallback read from (outdated) cache
+        status_validity = int(data.get('status_validity', 0)) * 60
+        status_ts = data.get('statusts', '')
+        status_ts = datetime.fromisoformat(status_ts) if status_ts else datetime.min
+        ts_now = datetime.now(timezone.utc)
+        expired = (ts_now - status_ts).total_seconds() > status_validity
+        if expired:
+            _LOGGER.warning(f"Detected expired data; set all status values to unknown")
 
         for item_key, item_val in values.items():
             # the value 'h' is used when a property is not available/supported
             if item_val=='h':
                 continue
+
+            # If the data is expired then set all values to unknown.
+            # This is used to be able to initialize the integration during startup, even if
+            # communication to DAB Pumps fails.
+            if expired:
+                item_val = None
             
             # Item Entity ID is combination of device serial and each field unique name as internal sensor hash
             # Item Unique ID is a more readable version
@@ -762,11 +797,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # worker function
         async def _async_worker(self, context, data):
             if not self._store:
-                return None
+                return
             
+            # Retrieve cache file contents
             store = await self._store.async_get_data() or {}
             cache = store.get("cache", {})
-            cache[context] = { "ts": datetime.now() } | async_redact_data(data, DIAGNOSTICS_REDACT)
+
+            data_old = cache.get(context, {})
+
+            # We only update the cached contents once a day to prevent too many writes of unchanged data
+            ts_str = data_old.get("ts", "")
+            ts_old = datetime.fromisoformat(ts_str) if ts_str else datetime.min
+            ts_new = datetime.now()
+
+            if (ts_new - ts_old).total_seconds() < 86400-300:   # 1 day minus 5 minutes
+                # Not expired yet
+                return
+
+            _LOGGER.debug(f"Update cache: {context}")
+        
+            # Update and write new cache file contents
+            cache[context] = { "ts": ts_new } | data
             
             store["cache"] = cache
             await self._store.async_set_data(store)
@@ -781,6 +832,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     async def _async_fetch_from_cache(self, context):
         if not self._store:
             return {}
+        
+        _LOGGER.debug(f"Fetch from cache: {context}")
         
         store = await self._store.async_get_data() or {}
         cache = store.get("cache", {})

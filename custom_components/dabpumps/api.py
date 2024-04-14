@@ -118,7 +118,7 @@ class DabPumpsApi:
                     # still valid for another 10 seconds
                     await self._async_update_diagnostics(datetime.now(), "token reuse", None, None, token_payload)
                     return
-                    
+
         # Make sure to have been logged out of previous sessions.
         # DAB Pumps service does not handle multiple logins from same account very well
         await self.async_logout()
@@ -199,7 +199,7 @@ class DabPumpsApi:
         # Use a fresh client to keep track of cookies during login and subsequent calls
         client = httpx.AsyncClient(follow_redirects=True, timeout=120.0)
 
-        context = "login DConnect_app"
+        context = f"login DConnect_app"
         verb = "POST"
         url = DABPUMPS_SSO_URL + f"/auth/realms/dwt-group/protocol/openid-connect/token"
         data = {
@@ -224,7 +224,7 @@ class DabPumpsApi:
             raise DabPumpsApiAuthError(error)
 
         # Step 2: Validate the auth token against the DABPumps Api
-        context = "login DConnect_app validatetoken"
+        context = f"login DConnect_app validatetoken"
         verb = "GET"
         url = DABPUMPS_API_URL + f"/api/v1/token/validatetoken"
         params = {
@@ -397,6 +397,7 @@ class DabPumpsApi:
 
     async def async_fetch_strings(self, lang):
         """Get string translations"""
+    
         context = f"localization_{lang}"
         verb = "GET"
         url = DABPUMPS_API_URL + f"/resources/js/localization_{lang}.properties?format=JSON"
