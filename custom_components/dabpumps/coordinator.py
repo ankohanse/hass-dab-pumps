@@ -468,10 +468,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     # Ignore problems if this is just a refresh
                     pass
                 else:
-                    # Retry from persisted cache if this is the initial retrieve.
+                    # Retry from (outdated) persisted cache if this is the initial retrieve.
+                    # However, we will then set all values to unknown.
                     try:
                         data = await self._async_fetch_from_cache(context)
-                        await self._async_process_device_status_data(device, data)
+                        await self._async_process_device_status_data(device, data, expired_values=True)
                     except Exception:
                         # Force retry in calling function by raising original exception
                         raise e
@@ -728,7 +729,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._config_map.update(config_map)
 
 
-    async def _async_process_device_status_data(self, device, data):
+    async def _async_process_device_status_data(self, device, data, expired_values=False):
         """
         Process status data for a device
         """
@@ -736,25 +737,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         status = data.get('status') or "{}"
         values = json.loads(status)
         
-        # determine whether the values are still valid.
-        # Expired values can happen when using fallback read from (outdated) cache
-        status_validity = int(data.get('status_validity', 0)) * 60
-        status_ts = data.get('statusts', '')
-        status_ts = datetime.fromisoformat(status_ts) if status_ts else datetime.min
-        ts_now = datetime.now(timezone.utc)
-        expired = (ts_now - status_ts).total_seconds() > status_validity
-        if expired:
-            _LOGGER.warning(f"Detected expired data; set all status values to unknown")
-
         for item_key, item_val in values.items():
             # the value 'h' is used when a property is not available/supported
             if item_val=='h':
                 continue
 
-            # If the data is expired then set all values to unknown.
-            # This is used to be able to initialize the integration during startup, even if
-            # communication to DAB Pumps fails.
-            if expired:
+            # If the data is regarded as expired then set all values to unknown.
+            # This is used to be able to initialize the integration from persited cached values
+            # during startup, even if communication to DAB Pumps fails.
+            if expired_values:
                 item_val = None
             
             # Item Entity ID is combination of device serial and each field unique name as internal sensor hash
