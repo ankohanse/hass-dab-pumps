@@ -286,7 +286,7 @@ class DabPumpsApi:
             self._client = None
         
         
-    async def async_fetch_install_list(self, callback_diag_save=None):
+    async def async_fetch_install_list(self):
         """Get installation list"""
 
         timestamp = datetime.now()
@@ -316,11 +316,7 @@ class DabPumpsApi:
         url = DABPUMPS_API_URL + f"/api/v1/installation/{install_id_org}"
         
         _LOGGER.debug(f"DAB Pumps retrieve installation details via {verb} {url}")
-        try:
-            result = await self._async_send_request(context, verb, url)
-        except:
-            _LOGGER.warn(f"Could not retrieve data for installation {install_id}. Trying fallback data.")
-            result = await self.async_fallback_install_details(install_id)
+        result = await self._async_send_request(context, verb, url)
     
         return result
 

@@ -393,20 +393,39 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             data = await self._api.async_fetch_install_details(self._install_id)
             await self._async_process_install_data(data)
             await self._async_update_cache(context, data)
-
+            ex = None
         except Exception as e:
             if len(self._device_map) > 0:
                 # Ignore problems if this is just a periodic refresh
-                pass
+                ex = None
             else:
-                # Retry from persisted cache if this is the initial retrieve
-                try:
-                    data = await self._async_fetch_from_cache(context)
-                    await self._async_process_install_data(data)
+                # Try next alternative while remembering original exception
+                ex = e
 
-                except Exception:
-                    # Force retry in calling function by raising original exception
-                    raise e
+        if ex:
+            # Next, try from persisted cache
+            try:
+                data = await self._async_fetch_from_cache(context)
+                await self._async_process_install_data(data)
+                ex = None
+            except Exception:
+                # Try next alternative while remembering original exception
+                pass
+
+        if ex:
+            #  Finally, try from API history store 'details->installation list'
+            try:
+                data = await self._api.async_fallback_install_details(self._install_id)
+                await self._async_process_install_data(data)
+                await self._async_update_cache(context, data)
+                ex = None
+            except Exception as e:
+                # Try next alternative while remembering original exception
+                pass
+
+        if ex:
+            # Force retry in calling function by raising original exception
+            raise ex
 
         # If we reach this point, then all devices have been fetched/refreshed
         self._device_map_ts = datetime.now()
@@ -428,19 +447,28 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 data = await self._api.async_fetch_device_config(device)
                 await self._async_process_device_config_data(device, data)
                 await self._async_update_cache(context, data)
-
+                ex = None
             except Exception as e:
                 if device.config_id in self._config_map:
                     # Ignore problems if this is just a refresh
-                    pass
+                    ex = None
                 else:
-                    # Retry from persisted cache if this is the initial retrieve
-                    try:
-                        data = await self._async_fetch_from_cache(context)
-                        await self._async_process_device_config_data(device, data)
-                    except Exception:
-                        # Force retry in calling function by raising original exception
-                        raise e
+                    # Try next alternative while remembering original exception
+                    ex = e
+
+            if ex:
+                # Next try from persisted cache if this is the initial retrieve
+                try:
+                    data = await self._async_fetch_from_cache(context)
+                    await self._async_process_device_config_data(device, data)
+                    ex = None
+                except Exception:
+                    # Try next alternative while remembering original exception
+                    pass
+
+            if ex:
+                # Force retry in calling function by raising original exception
+                raise ex
                     
         # If we reach this point, then all device configs have been fetched/refreshed
         self._config_map_ts = datetime.now()
@@ -462,20 +490,29 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 data = await self._api.async_fetch_device_statusses(device)
                 await self._async_process_device_status_data(device, data)
                 await self._async_update_cache(context, data)
-
+                ex = None
             except Exception as e:
                 if any(status.serial==device.serial for status in self._status_map.values()):
                     # Ignore problems if this is just a refresh
-                    pass
+                    ex = None
                 else:
-                    # Retry from (outdated) persisted cache if this is the initial retrieve.
-                    # However, we will then set all values to unknown.
-                    try:
-                        data = await self._async_fetch_from_cache(context)
-                        await self._async_process_device_status_data(device, data, expired_values=True)
-                    except Exception:
-                        # Force retry in calling function by raising original exception
-                        raise e
+                    # Try next alternative while remembering original exception
+                    ex = e
+
+            if ex:
+                # Next try from (outdated) persisted cache if this is the initial retrieve.
+                # However, we will then set all values to unknown.
+                try:
+                    data = await self._async_fetch_from_cache(context)
+                    await self._async_process_device_status_data(device, data, expired_values=True)
+                    ex = None
+                except Exception:
+                    # Try next alternative while remembering original exception
+                    pass
+
+            if ex:
+                # Force retry in calling function by raising original exception
+                raise ex
 
         # If we reach this point, then all device statusses have been fetched/refreshed
         self._status_map_ts = datetime.now()
@@ -494,19 +531,28 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             data = await self._api.async_fetch_strings(self.language)
             await self._async_process_strings_data(data)
             await self._async_update_cache(context, data)
-
+            ex = None
         except Exception as e:
-            # Ignore problems if this is just a refresh
             if len(self._string_map) > 0:
-                pass
+                # Ignore problems if this is just a refresh
+                ex = None
             else:
-                 # Retry from persisted cache if this is the initial retrieve
-                try:
-                    data = await self._async_fetch_from_cache(context)
-                    await self._async_process_strings_data(data)
-                except Exception:
-                    # Force retry in calling function by raising original exception
-                    raise e
+                # Try next alternative while remembering original exception
+                ex = e
+                
+        if ex:
+            # Next, try from persisted cache if this is the initial retrieve
+            try:
+                data = await self._async_fetch_from_cache(context)
+                await self._async_process_strings_data(data)
+                ex = None
+            except Exception:
+                # Try next alternative while remembering original exception
+                pass
+
+        if ex:
+            # Force retry in calling function by raising original exception
+            raise ex
 
         # If we reach this point, then all strings have been fetched/refreshed 
         self._string_map_ts = datetime.now()
@@ -521,16 +567,23 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         # First try to retrieve from API.
-        # Make sure not to overwrite data in dabpumps.api_history file when an empty list is returned.
         context = f"installation list"
         try:
             data = await self._api.async_fetch_install_list()
-            await self._async_process_install_list(data, ignore_empty=True)
+            await self._async_process_install_list(data)
             await self._async_update_cache(context, data)
-
+            ex = None
         except Exception as e:
-            if not ignore_exception:
-                raise
+            if ignore_exception:
+                # Ignore problems
+                ex = None
+            else:
+                # Try next alternative while remembering original exception
+                ex = e
+
+        if ex:
+            # Force retry in calling function by raising original exception
+            raise ex
 
         # If we reach this point, then installation list been fetched/refreshed/ignored
         self._install_map_ts = datetime.now()
