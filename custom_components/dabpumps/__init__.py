@@ -26,6 +26,7 @@ from .coordinator import (
 from .const import (
     STARTUP_MESSAGE,
     DOMAIN,
+    PLATFORMS,
     API,
     COORDINATOR,
     HELPER,
@@ -36,16 +37,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.info(STARTUP_MESSAGE)
-
-
-PLATFORMS: list[Platform] = [
-    Platform.SENSOR,
-    Platform.BINARY_SENSOR,
-    Platform.NUMBER,
-    Platform.SELECT,
-    Platform.SWITCH,
-    
-]
 
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)

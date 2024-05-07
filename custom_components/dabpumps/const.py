@@ -6,6 +6,7 @@ from homeassistant.const import (
     CONF_USERNAME,
     CONF_PASSWORD,
 )
+from homeassistant.const import Platform
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
 #_LOGGER = logging.getLogger("custom_components.dabpumps")
@@ -13,8 +14,16 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 # Base component constants
 DOMAIN = "dabpumps"
 NAME = "DAB Pumps"
-VERSION="2024.04.4"
+VERSION="2024.05.1"
 ISSUE_URL = "https://github.com/ankoh/dabpumps/issues"
+
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+    Platform.NUMBER,
+    Platform.SELECT,
+    Platform.SWITCH,
+]
 
 HUB = "Hub"
 API = "Api"

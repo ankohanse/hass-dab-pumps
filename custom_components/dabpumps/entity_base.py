@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import (
     DOMAIN,
+    PLATFORMS,
     NAME,
     HELPER,
     CONF_INSTALL_ID,
@@ -45,6 +46,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+import homeassistant.helpers.entity_registry as entity_registry
 
 
 from .const import (
@@ -107,6 +110,9 @@ class DabPumpsEntityHelper:
 
         # Get an instance of the DabPumpsCoordinator for this install_id
         self.coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
+
+        # Get entity registry
+        self.entity_registry = entity_registry.async_get(hass)
         
     
     async def async_setup_entry(self, target_platform, target_class, async_add_entities: AddEntitiesCallback):
@@ -121,8 +127,10 @@ class DabPumpsEntityHelper:
             _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
             return
         
-        _LOGGER.debug(f"Create entities for installation '{self.install_name}' ({self.install_id})")
+        other_platforms = [p for p in PLATFORMS if p != target_platform]
         
+        _LOGGER.debug(f"Create entities for installation '{self.install_name}' ({self.install_id})")
+
         # Iterate all statusses to create sensor entities
         entities = []
         for object_id, status in status_map.items():
@@ -152,13 +160,25 @@ class DabPumpsEntityHelper:
                 # This status will be handled via another platform
                 continue
                 
+            # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
+            entity = None                
             try:
-                # Create a Sensor, Binary_Sensor, or other entity for this status
                 entity = target_class(self.coordinator, self.install_id, object_id, device, params, status)
                 entities.append(entity)
             except Exception as  ex:
                 _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
-        
+
+            # See if new entity already existed under another platform. If so, then remove the old entity.
+            if entity:
+                for p in other_platforms:
+                    try:
+                        entity_id = self.entity_registry.async_get_entity_id(p, DOMAIN, entity.unique_id)
+                        if entity_id:
+                            _LOGGER.info(f"Remove obsolete {entity_id} that is replaced by {platform}.{entity.unique_id}")
+                            self.entity_registry.async_remove(entity_id)
+                    except Exception as  ex:
+                        _LOGGER.warning(f"Could not remove obsolete {p}.{entity.unique_id} entity. Details: {ex}")
+
         _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self.install_name}' with {len(device_map)} devices")
         if entities:
             async_add_entities(entities)
@@ -223,10 +243,11 @@ class DabPumpsEntityHelper:
         # And needs to be in group 'Extra Comfort' or be a specific key
         # that would otherwise be excluded as group
         keys_config = [
-            'PumpDisable'
+            'PumpDisable',
         ]
         groups_config = [
-            'Extra Comfort'
+            'Extra Comfort',
+            'Setpoint',
         ]
         is_config = False
         if self.coordinator.user_role in params.change:
@@ -246,7 +267,7 @@ class DabPumpsEntityHelper:
                 return Platform.SELECT
                 
             # Is it a numeric type?
-            elif params.type == 'measure' and params.min is not None and params.max is not None:
+            elif params.type == 'measure':
                 return Platform.NUMBER
         
         # Is it a binary sensor?
@@ -499,6 +520,7 @@ class DabPumpsEntity(Entity):
         # Typically intended for restart or update functionality
         groups_config = [
             'System Management',
+            'Setpoint'
         ]
         if self._params.group in groups_config and 'I' in self._params.change:
             return EntityCategory.CONFIG
