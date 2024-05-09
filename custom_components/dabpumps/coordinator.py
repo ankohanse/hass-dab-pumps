@@ -742,8 +742,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             param_type = meta_param.get('type') or ''
             param_unit = meta_param.get('unit')
             param_weight = meta_param.get('weight')
-            param_min = meta_param.get('min')
-            param_max = meta_param.get('max')
+            param_min = meta_param.get('min') or meta_param.get('warn_low')
+            param_max = meta_param.get('max') or meta_param.get('warn_hi')
             param_family = meta_param.get('family') or ''
             param_group = meta_param.get('group') or ''
             

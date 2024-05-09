@@ -578,13 +578,14 @@ class DabPumpsEntity(Entity):
                 candidates = [1000, 100, 10, 1]
                 
         # find first candidate where min, max and diff are all dividable by (without remainder)
-        min = int(self._params.min)
-        max = int(self._params.max)
-        diff = max - min
-        
-        for c in candidates:
-            if (min % c == 0) and (max % c == 0) and (diff % c == 0):
-                return c
+        if self._params.min is not None and self._params.max is not None:
+            min = int(self._params.min)
+            max = int(self._params.max)
+            diff = max - min
+            
+            for c in candidates:
+                if (min % c == 0) and (max % c == 0) and (diff % c == 0):
+                    return c
                 
         return None
 

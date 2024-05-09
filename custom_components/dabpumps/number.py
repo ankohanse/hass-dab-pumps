@@ -125,8 +125,8 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
             # Convert to float
             attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
-            attr_min = round(float(self._params.min) * self._params.weight, attr_precision) if self._params.min is not None else None
-            attr_max = round(float(self._params.max) * self._params.weight, attr_precision) if self._params.max is not None else None
+            attr_min = float(self._params.min) if self._params.min is not None else None
+            attr_max = float(self._params.max) if self._params.max is not None else None
             attr_val = round(float(status.val) * self._params.weight, attr_precision) if status.val is not None else None
             attr_step = self._params.weight
         else:
@@ -150,8 +150,10 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
             self._attr_mode = NumberMode.BOX
             self._attr_device_class = self.get_number_device_class()
             self._attr_entity_category = self.get_entity_category()
-            self._attr_native_min_value = attr_min
-            self._attr_native_max_value = attr_max
+            if attr_min:
+                self._attr_native_min_value = attr_min
+            if attr_max:
+                self._attr_native_max_value = attr_max
             self._attr_native_step = attr_step
             
             self._attr_device_info = DeviceInfo(
@@ -179,8 +181,8 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         """Change the selected option"""
         
         if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
-            # Convert to float
-            data_val = float(round(value / self._params.weight))
+            # Convert from float to int
+            data_val = int(round(value / self._params.weight))
         else:
             # Convert to int
             data_val = int(value)
