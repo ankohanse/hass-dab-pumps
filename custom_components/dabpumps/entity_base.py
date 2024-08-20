@@ -460,6 +460,8 @@ class DabPumpsEntity(Entity):
             'Last_Period_Flow_Counter',
             'Last_Period_flow_Flow_Counter_Gall',
             'Last_Period_Energy_Counter',
+            'Fluid_Remain',
+            'Fluid_Remain_inch',
         ]
         if self._params.key in keys_none:
             return None
