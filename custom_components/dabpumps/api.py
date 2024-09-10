@@ -20,6 +20,7 @@ from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import IntegrationError
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.storage import Store
 
 from httpx import RequestError, TimeoutException
@@ -51,22 +52,15 @@ class DabPumpsApiFactory:
     
         key = f"{username.lower()}_{hash(password) % 10**8}"
     
-        # if a DabPumpsApi instance for these credentials is already available then e-use it
-        if hass:
-            if not API in hass.data[DOMAIN]:
-                hass.data[DOMAIN][API] = {}
-                
-            api = hass.data[DOMAIN][API].get(key, None)
-        else:
-            api = None
+        if not API in hass.data[DOMAIN]:
+            hass.data[DOMAIN][API] = {}
             
+        # if a DabPumpsApi instance for these credentials is already available then e-use it
+        api = hass.data[DOMAIN][API].get(key, None)
         if not api:
             # Create a new DabPumpsApi instance
-            api = DabPumpsApi(hass, username, password)
-    
-            # cache this new DabPumpsApi instance        
-            if hass:
-                hass.data[DOMAIN][API][key] = api
+            api = DabPumpsApi(hass, username, password, use_history_store=True)
+            hass.data[DOMAIN][API][key] = api
         
         return api
     
@@ -78,7 +72,7 @@ class DabPumpsApiFactory:
         """
     
         # Create a new DabPumpsApi instance
-        api = DabPumpsApi(hass, username, password)
+        api = DabPumpsApi(hass, username, password, use_history_store=False)
     
         return api    
 
@@ -86,15 +80,15 @@ class DabPumpsApiFactory:
 # DabPumpsAPI to detect device and get device info, fetch the actual data from the Resol device, and parse it
 class DabPumpsApi:
     
-    def __init__(self, hass, username, password):
+    def __init__(self, hass, username, password, use_history_store=True):
+        self._hass = hass
         self._username = username
         self._password = password
         self._client = None
         self._login_method = None
         
-        if hass:
+        if use_history_store:
             # maintain calls history for diagnostics during normal operations    
-            self._hass = hass
             self._history_key = username.lower()
             self._history_store = DabPumpsApiHistoryStore(hass, self._history_key)
 
@@ -102,7 +96,6 @@ class DabPumpsApi:
             asyncio.run_coroutine_threadsafe(self._async_cleanup_diagnostics(), hass.loop)
         else:
             # Use from a temporary coordinator during config-flow first time setup of component
-            self._hass = None
             self._history_key = None
             self._history_store = None
 
@@ -163,7 +156,9 @@ class DabPumpsApi:
     async def async_login_dablive_app(self, isDabLive=1):
         # Step 1: get authorization token
         # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = httpx.AsyncClient(follow_redirects=True, timeout=120.0)
+        client = get_async_client(self._hass)
+        client.follow_redirects = True
+        client.timeout = 120.0
 
         context = f"login DabLive_app (isDabLive={isDabLive})"
         verb = "POST"
@@ -197,7 +192,9 @@ class DabPumpsApi:
     async def async_login_dconnect_app(self):
         # Step 1: get authorization token
         # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = httpx.AsyncClient(follow_redirects=True, timeout=120.0)
+        client = get_async_client(self._hass)
+        client.follow_redirects = True
+        client.timeout = 120.0
 
         context = f"login DConnect_app"
         verb = "POST"
@@ -244,7 +241,9 @@ class DabPumpsApi:
     async def async_login_dconnect_web(self):
         # Step 1: get login url
         # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = httpx.AsyncClient(follow_redirects=True, timeout=120.0)
+        client = get_async_client(self._hass)
+        client.follow_redirects = True
+        client.timeout = 120.0
 
         _LOGGER.debug(f"DAB Pumps retrieve login page via GET {url}")
         context = f"login DConnect_web home"
