@@ -1,0 +1,39 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "description": "Por favor, introduza os detalhes da sua conta DAB Pumps DConnect:",
+                "data": {
+                    "password": "Palavra-passe",
+                    "username": "Nome de Utilizador"
+                }
+            },
+            "install": {
+                "description": "Escolha a sua instalação DAB Pumps",
+                "data": {
+                    "install_name": "instalação"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Falha na ligação",
+            "invalid_auth": "Autenticação inválida",
+            "unknown": "Erro inesperado"
+        },
+        "abort": {
+            "already_configured": "O dispositivo já está configurado"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Opções Gerais",
+                "data": {
+                    "polling_interval": "Intervalo de pesquisa para atualizar os sensores (segundos)",
+                    "language": "Idioma"
+                }
+            }
+        },
+        "error": {}
+    }
+}
