@@ -104,6 +104,8 @@ API_LOGIN.DABLIVE_APP_1 = 'DabLive_app_1'
 API_LOGIN.DCONNECT_APP = 'DConnect_app'
 API_LOGIN.DCONNECT_WEB = 'DConnect_web'
 
+API_CLIENT_TIMEOUT = 120.0
+
 # Debug: set this constant to True to simulate a configuration with multiple installations for one DAB account
 SIMULATE_MULTI_INSTALL = False
 SIMULATE_SUFFIX_ID = "_test"

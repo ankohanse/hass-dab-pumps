@@ -20,7 +20,7 @@ from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import IntegrationError
-from homeassistant.helpers.httpx_client import get_async_client
+from homeassistant.helpers.httpx_client import create_async_httpx_client
 from homeassistant.helpers.storage import Store
 
 from httpx import RequestError, TimeoutException
@@ -34,6 +34,7 @@ from .const import (
     DABPUMPS_API_TOKEN_COOKIE,
     DABPUMPS_API_TOKEN_TIME_MIN,
     API_LOGIN,
+    API_CLIENT_TIMEOUT,
     SIMULATE_SUFFIX_ID,
     DIAGNOSTICS_REDACT,
 )
@@ -156,9 +157,7 @@ class DabPumpsApi:
     async def async_login_dablive_app(self, isDabLive=1):
         # Step 1: get authorization token
         # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = get_async_client(self._hass)
-        client.follow_redirects = True
-        client.timeout = 120.0
+        client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
 
         context = f"login DabLive_app (isDabLive={isDabLive})"
         verb = "POST"
@@ -192,9 +191,7 @@ class DabPumpsApi:
     async def async_login_dconnect_app(self):
         # Step 1: get authorization token
         # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = get_async_client(self._hass)
-        client.follow_redirects = True
-        client.timeout = 120.0
+        client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
 
         context = f"login DConnect_app"
         verb = "POST"
@@ -241,14 +238,13 @@ class DabPumpsApi:
     async def async_login_dconnect_web(self):
         # Step 1: get login url
         # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = get_async_client(self._hass)
-        client.follow_redirects = True
-        client.timeout = 120.0
+        client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
 
-        _LOGGER.debug(f"DAB Pumps retrieve login page via GET {url}")
         context = f"login DConnect_web home"
         verb = "GET"
         url = DABPUMPS_API_URL
+
+        _LOGGER.debug(f"DAB Pumps retrieve login page via GET {url}")
         text = await self._async_send_request(context, verb, url, client=client)
         
         match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
@@ -273,16 +269,8 @@ class DabPumpsApi:
         
         
     async def async_logout(self):
-        if not self._client:
-            return
-        
-        try:
-            # Forget our current session so we are forced to do a fresh login in a next retry
-            await self._client.aclose()
-        except:
-            pass # ignore any exceptions
-        finally:
-            self._client = None
+        # do not call aclose() on the Home Assistant async httpx client. Home Assistant will take care of it during shutdown
+        self._client = None
         
         
     async def async_fetch_install_list(self):
