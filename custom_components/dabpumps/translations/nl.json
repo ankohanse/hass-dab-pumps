@@ -1,0 +1,40 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "description": "Voer je DAB Pumps DConnect account details in:",
+                "data": {
+                    "password": "Password",
+                    "username": "Username"
+                }
+            },
+            "install": {
+                "description": "Kies je DAB Pumps installatie",
+                "data": {
+                    "install_name": "installatie"
+                }
+            }
+        },
+        "error": {
+            "cannot_connect": "Verbinding gefaald",
+            "invalid_auth": "Verkeerde authenticatie",
+            "unknown": "Onverwachte fout"
+        },
+        "abort": {
+            "already_configured": "Systeem is al geconfigureerd"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title":"Algemene Opties",
+                "data": {
+                    "polling_interval": "Interval om sensoren te verversen (seconden)",
+                    "language": "Taal"
+                }
+            }
+        },
+        "error": {
+        }
+    }
+}
