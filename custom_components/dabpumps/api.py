@@ -85,8 +85,11 @@ class DabPumpsApi:
         self._hass = hass
         self._username = username
         self._password = password
-        self._client = None
         self._login_method = None
+
+        # Client to keep track of cookies during login and subsequent calls
+        # We keep the same client for the whole life of the api instance.
+        self._client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
         
         if use_history_store:
             # maintain calls history for diagnostics during normal operations    
@@ -102,16 +105,17 @@ class DabPumpsApi:
 
 
     async def async_login(self):
+        """Login to DAB Pumps by trying each of the possible login methods"""
+
         # Step 0: do we still have a client with a non-expired auth token?
-        if self._client:
-            token = self._client.cookies.get(DABPUMPS_API_TOKEN_COOKIE, domain=DABPUMPS_API_DOMAIN)
-            if token:
-                token_payload = jwt.decode(jwt=token, options={"verify_signature": False})
-                
-                if token_payload.get("exp", 0) - time.time() > DABPUMPS_API_TOKEN_TIME_MIN:
-                    # still valid for another 10 seconds
-                    await self._async_update_diagnostics(datetime.now(), "token reuse", None, None, token_payload)
-                    return
+        token = self._client.cookies.get(DABPUMPS_API_TOKEN_COOKIE, domain=DABPUMPS_API_DOMAIN)
+        if token:
+            token_payload = jwt.decode(jwt=token, options={"verify_signature": False})
+            
+            if token_payload.get("exp", 0) - time.time() > DABPUMPS_API_TOKEN_TIME_MIN:
+                # still valid for another 10 seconds
+                await self._async_update_diagnostics(datetime.now(), "token reuse", None, None, token_payload)
+                return
 
         # Make sure to have been logged out of previous sessions.
         # DAB Pumps service does not handle multiple logins from same account very well
@@ -126,28 +130,30 @@ class DabPumpsApi:
                 match method:
                     case API_LOGIN.DABLIVE_APP_1: 
                         # Try the simplest method first
-                        client = await self.async_login_dablive_app(isDabLive=1)
+                        await self.async_login_dablive_app(isDabLive=1)
                     case API_LOGIN.DABLIVE_APP_0:
                         # Try the alternative simplest method
-                        client = await self.async_login_dablive_app(isDabLive=0)
+                        await self.async_login_dablive_app(isDabLive=0)
                     case API_LOGIN.DCONNECT_APP:
                         # Try the method that uses 2 steps
-                        client = await self.async_login_dconnect_app()
+                        await self.async_login_dconnect_app()
                     case API_LOGIN.DCONNECT_WEB:
                         # Finally try the most complex and unreliable one
-                        client = await self.async_login_dconnect_web()
+                        await self.async_login_dconnect_web()
                     case _:
                         # No previously known login method was set yet
                         continue
 
                 # if we reached this point then a login method succeeded
-                # start using this client and remember which method had success
-                self._client = client
+                # keep using this client and its cookies and remember which method had success
                 self._login_method = method  
-                return  
+                return 
             
             except Exception as ex:
                 error = ex
+
+            # Clear any login cookies before the next try
+            await self.async_logout()
 
         # if we reached this point then all methods failed.
         if error:
@@ -155,10 +161,9 @@ class DabPumpsApi:
         
 
     async def async_login_dablive_app(self, isDabLive=1):
-        # Step 1: get authorization token
-        # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
+        """Login to DAB Pumps via the method as used by the DAB Live app"""
 
+        # Step 1: get authorization token
         context = f"login DabLive_app (isDabLive={isDabLive})"
         verb = "POST"
         url = DABPUMPS_API_URL + f"/auth/token"
@@ -174,7 +179,7 @@ class DabPumpsApi:
         }
         
         _LOGGER.debug(f"DAB Pumps login for '{self._username}' via {verb} {url}")
-        result = await self._async_send_request(context, verb, url, params=params, data=data, hdrs=hdrs, client=client)
+        result = await self._async_send_request(context, verb, url, params=params, data=data, hdrs=hdrs)
 
         token = result.get('access_token') or ""
         if not token:
@@ -184,15 +189,13 @@ class DabPumpsApi:
 
         # if we reach this point then the token was OK
         # Store returned access-token as cookie so it will automatically be passed in next calls
-        client.cookies.set(name=DABPUMPS_API_TOKEN_COOKIE, value=token, domain=DABPUMPS_API_DOMAIN, path='/')
-        return client
+        self._client.cookies.set(name=DABPUMPS_API_TOKEN_COOKIE, value=token, domain=DABPUMPS_API_DOMAIN, path='/')
         
         
     async def async_login_dconnect_app(self):
-        # Step 1: get authorization token
-        # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
+        """Login to DAB Pumps via the method as used by the DConnect app"""
 
+        # Step 1: get authorization token
         context = f"login DConnect_app"
         verb = "POST"
         url = DABPUMPS_SSO_URL + f"/auth/realms/dwt-group/protocol/openid-connect/token"
@@ -209,7 +212,7 @@ class DabPumpsApi:
         }
         
         _LOGGER.debug(f"DAB Pumps login for '{self._username}' via {verb} {url}")
-        result = await self._async_send_request(context, verb, url, data=data, hdrs=hdrs, client=client)
+        result = await self._async_send_request(context, verb, url, data=data, hdrs=hdrs)
 
         token = result.get('access_token') or ""
         if not token:
@@ -227,25 +230,23 @@ class DabPumpsApi:
         }
 
         _LOGGER.debug(f"DAB Pumps validate token via {verb} {url}")
-        result = await self._async_send_request(context, verb, url, params=params, client=client)
+        result = await self._async_send_request(context, verb, url, params=params)
 
         # if we reach this point then the token was OK
         # Store returned access-token as cookie so it will automatically be passed in next calls
-        client.cookies.set(name=DABPUMPS_API_TOKEN_COOKIE, value=token, domain=DABPUMPS_API_DOMAIN, path='/')
-        return client
+        self._client.cookies.set(name=DABPUMPS_API_TOKEN_COOKIE, value=token, domain=DABPUMPS_API_DOMAIN, path='/')
         
 
     async def async_login_dconnect_web(self):
-        # Step 1: get login url
-        # Use a fresh client to keep track of cookies during login and subsequent calls
-        client = create_async_httpx_client(self._hass, follow_redirects=True, timeout=API_CLIENT_TIMEOUT)
+        """Login to DAB Pumps via the method as used by the DConnect website"""
 
+        # Step 1: get login url
         context = f"login DConnect_web home"
         verb = "GET"
         url = DABPUMPS_API_URL
 
         _LOGGER.debug(f"DAB Pumps retrieve login page via GET {url}")
-        text = await self._async_send_request(context, verb, url, client=client)
+        text = await self._async_send_request(context, verb, url)
         
         match = re.search(r'action\s?=\s?\"(.*?)\"', text, re.MULTILINE)
         if not match:    
@@ -261,16 +262,19 @@ class DabPumpsApi:
         _LOGGER.debug(f"DAB Pumps login for '{self._username}' via POST {login_url}")
         context = f"login DConnect_web login"
         verb = "POST"
-        await self._async_send_request(context, verb, login_url, data=login_data, hdrs=login_hdrs, client=client)
+        await self._async_send_request(context, verb, login_url, data=login_data, hdrs=login_hdrs)
 
         # if we reach this point without exceptions then login was successfull
         # client access_token is already set by the last call
-        return client
         
         
     async def async_logout(self):
-        # do not call aclose() on the Home Assistant async httpx client. Home Assistant will take care of it during shutdown
-        self._client = None
+        """Logout from DAB Pumps"""
+
+        # Home Assistant will issue a warning when calling aclose() on the async httpx client.
+        # Instead of closing we will simply forget all cookies. The result is that on a next
+        # request, the client will act like it is a new one.
+        self._client.cookies.clear()
         
         
     async def async_fetch_install_list(self):
@@ -391,22 +395,20 @@ class DabPumpsApi:
         return result
 
 
-    async def _async_send_request(self, context, verb, url, params=None, data=None, json=None, hdrs=None, client=None):
+    async def _async_send_request(self, context, verb, url, params=None, data=None, json=None, hdrs=None):
         """GET or POST a request for JSON data"""
-        (data, _, _) = await self._async_send_request_ex(context, verb, url, params=params, data=data, json=json, hdrs=hdrs, client=client, diagnostics=True)
+        (data, _, _) = await self._async_send_request_ex(context, verb, url, params=params, data=data, json=json, hdrs=hdrs, diagnostics=True)
         return data
     
 
-    async def _async_send_request_ex(self, context, verb, url, params=None, data=None, json=None, hdrs=None, client=None, diagnostics=True):
+    async def _async_send_request_ex(self, context, verb, url, params=None, data=None, json=None, hdrs=None, diagnostics=True):
         """
         GET or POST a request for JSON data.
         Also returns the request and response performed
         """
-        client = client or self._client
-
         timestamp = datetime.now()
-        request = client.build_request(verb, url, params=params, data=data, json=json, headers=hdrs)
-        response = await client.send(request)
+        request = self._client.build_request(verb, url, params=params, data=data, json=json, headers=hdrs)
+        response = await self._client.send(request)
         
         # Save the diagnostics if requested
         if diagnostics:
