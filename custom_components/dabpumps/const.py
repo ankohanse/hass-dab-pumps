@@ -97,6 +97,7 @@ DABPUMPS_API_TOKEN_TIME_MIN = 10 # seconds remaining before we re-login
 
 COORDINATOR_RETRY_ATTEMPTS = 10
 COORDINATOR_RETRY_DELAY = 5    # seconds
+COORDINATOR_TIMEOUT = 120   # seconds
 
 API_LOGIN = types.SimpleNamespace()
 API_LOGIN.DABLIVE_APP_0 = 'DabLive_app_0'
@@ -104,7 +105,6 @@ API_LOGIN.DABLIVE_APP_1 = 'DabLive_app_1'
 API_LOGIN.DCONNECT_APP = 'DConnect_app'
 API_LOGIN.DCONNECT_WEB = 'DConnect_web'
 
-API_CLIENT_TIMEOUT = 120.0
 
 # Debug: set this constant to True to simulate a configuration with multiple installations for one DAB account
 SIMULATE_MULTI_INSTALL = False
