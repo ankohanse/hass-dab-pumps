@@ -55,6 +55,7 @@ from .const import (
     DIAGNOSTICS_REDACT,
     COORDINATOR_RETRY_ATTEMPTS,
     COORDINATOR_RETRY_DELAY,
+    COORDINATOR_TIMEOUT,
     SIMULATE_MULTI_INSTALL,
     SIMULATE_SUFFIX_ID,
     SIMULATE_SUFFIX_NAME,
@@ -154,8 +155,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._user_role_ts = datetime.min
         self._user_role = 'CUSTOMER'
         
-        # retry counter for diagnosis
-        self._retries_needed = [ 0 for r in range(COORDINATOR_RETRY_ATTEMPTS) ]
+        # counters for diagnostics
+        self._diag_retries = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
+        self._diag_durations = { n: 0 for n in range(10) }
 
         # Cached data in case communication to DAB Pumps fails
         self._hass = hass
@@ -197,16 +199,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Fetch installation data from API.
         """
         _LOGGER.debug(f"Config flow data")
+        await self._async_detect_install_list()
         
-        try:
-            async with async_timeout.timeout(60):
-                await self._async_detect_install_list()
-                
-                #_LOGGER.debug(f"install_map: {self._install_map}")
-                return (self._install_map)
-            
-        except asyncio.TimeoutError as err:
-            raise UpdateFailed(f"Timeout while communicating with API: {err}")
+        #_LOGGER.debug(f"install_map: {self._install_map}")
+        return (self._install_map)
     
     
     async def _async_update_data(self):
@@ -218,19 +214,14 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         _LOGGER.debug(f"Update data")
 
-        try:
-            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
-            # handled by the data update coordinator.
-            async with async_timeout.timeout(60):
-                await self._async_detect_data()
-                
-                #_LOGGER.debug(f"device_map: {self._device_map}")
-                #_LOGGER.debug(f"config_map: {self._config_map}")
-                #_LOGGER.debug(f"status_map: {self._status_map}")
-                return (self._device_map, self._config_map, self._status_map)
+        # Note: asyncio.TimeoutError and aiohttp.ClientError are already
+        # handled by the data update coordinator.
+        await self._async_detect_data()
         
-        except asyncio.TimeoutError as err:
-            raise UpdateFailed(f"Timeout while communicating with API: {err}")
+        #_LOGGER.debug(f"device_map: {self._device_map}")
+        #_LOGGER.debug(f"config_map: {self._config_map}")
+        #_LOGGER.debug(f"status_map: {self._status_map}")
+        return (self._device_map, self._config_map, self._status_map)
     
     
     async def async_modify_data(self, object_id, value):
@@ -253,16 +244,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._status_map[object_id] = status
         
         # update the remote value
-        try:
-            async with async_timeout.timeout(60):
-                return await self._async_change_device_status(status, value)
-        
-        except asyncio.TimeoutError as err:
-            raise UpdateFailed(f"Timeout while communicating with API: {err}")
-    
+        return await self._async_change_device_status(status, value)
+   
     
     async def _async_detect_install_list(self):
         error = None
+        ts_start = datetime.now()
+
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
                 await self._api.async_login()
@@ -270,7 +258,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 # Fetch the list of installations
                 await self._async_detect_installations(ignore_exception=False)
                 
-                self._retries_needed[retry] += 1
+                # Keep track of how many retries were needed and duration
+                self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
                 return True;
             
             except Exception as ex:
@@ -289,13 +278,16 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if error:
             _LOGGER.warning(error)
         
-        self._retries_needed[retry] += 1
+        # Keep track of how many retries were needed and duration
+        self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
         return False
     
         
     async def _async_detect_data(self):
         warnings = []
         error = None
+        ts_start = datetime.now()
+
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
                 try:
@@ -323,40 +315,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 # Attempt to refresh the list of installations (once a day, just for diagnostocs)
                 await self._async_detect_installations(ignore_exception=True)
 
-                # Keep track of how many retries were needed until success
-                self._retries_needed[retry] += 1
-                return True;
-            
-            except Exception as ex:
-                error = str(ex)
-            
-            # Log off, end session and retry if possible
-            await self._api.async_logout();  
-            
-            if retry < COORDINATOR_RETRY_ATTEMPTS:
-                if retry < 2:
-                    _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                else:
-                    _LOGGER.warn(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                await asyncio.sleep(COORDINATOR_RETRY_DELAY)
-            
-        if error:
-            _LOGGER.warning(error)
-        
-        self._retries_needed[retry] += 1
-        return False
-    
-        
-    async def _async_change_device_status(self, status, value):
-        error = None
-        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
-            try:
-                await self._api.async_login()
-                
-                # Attempt to change the device status via the API
-                await self._api.async_change_device_status(status, value)
-
-                self._retries_needed[retry] += 1
+                # Keep track of how many retries were needed and duration
+                self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
                 return True
             
             except Exception as ex:
@@ -375,7 +335,44 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if error:
             _LOGGER.warning(error)
         
-        self._retries_needed[retry] += 1
+        # Keep track of how many retries were needed and duration
+        self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+        return False
+    
+        
+    async def _async_change_device_status(self, status, value):
+        error = None
+        ts_start = datetime.now()
+
+        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
+            try:
+                await self._api.async_login()
+                
+                # Attempt to change the device status via the API
+                await self._api.async_change_device_status(status, value)
+
+                # Keep track of how many retries were needed and duration
+                self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+                return True
+            
+            except Exception as ex:
+                error = str(ex)
+            
+            # Log off, end session and retry if possible
+            await self._api.async_logout();  
+            
+            if retry < COORDINATOR_RETRY_ATTEMPTS:
+                if retry < 2:
+                    _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
+                else:
+                    _LOGGER.warn(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
+                await asyncio.sleep(COORDINATOR_RETRY_DELAY)
+            
+        if error:
+            _LOGGER.warning(error)
+        
+        # Keep track of how many retries were needed and duration
+        self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
         return False
 
 
@@ -895,17 +892,26 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         for cmk,cmv in self._config_map.items():
             config_map[cmk]['meta_params'] = { k: v._asdict() for k,v in cmv.meta_params.items() }
             
-        calls_total = sum(self._retries_needed) or 1
-        retries_counter = { idx: n for idx, n in enumerate(self._retries_needed) }
-        retries_percent = { idx: round(100.0 * n / calls_total, 2) for idx, n in enumerate(self._retries_needed) }
+        retries_total = sum(self._diag_retries.values()) or 1
+        retries_counter = dict(sorted(self._diag_retries.items()))
+        retries_percent = { key: round(100.0 * n / retries_total, 2) for key,n in retries_counter.items() }
+        durations_total = sum(self._diag_durations.values()) or 1
+        durations_counter = dict(sorted(self._diag_durations.items()))
+        durations_percent = { key: round(100.0 * n / durations_total, 2) for key, n in durations_counter.items() }
             
         api_data = await self._api.async_get_diagnostics()
 
         return {
             "diagnostics_ts": datetime.now(),
             "diagnostics": {
-                "retries_counter": retries_counter,
-                "retries_percent": retries_percent,
+                "retries": {
+                    "counter": retries_counter,
+                    "percent": retries_percent,
+                },
+                "durations": {
+                    "counter": durations_counter,
+                    "percent": durations_percent,
+                },
             },
             "data": {
                 "install_id": self._install_id,
@@ -924,8 +930,23 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "user_role": self._user_role
             },
             "api": async_redact_data(api_data, DIAGNOSTICS_REDACT),
-        },
+        }
     
+
+    def _update_statistics(self, retries = None, duration = None):
+        if retries is not None:
+            if retries in self._diag_retries:
+                self._diag_retries[retries] += 1
+            else:
+                self._diag_retries[retries] = 1
+            
+        if duration is not None:
+            duration = round(duration.total_seconds(), 0)
+            if duration not in self._diag_durations:
+                self._diag_durations[duration] = 1
+            else:
+                self._diag_durations[duration] += 1
+
     
     @staticmethod
     def create_id(*args):
