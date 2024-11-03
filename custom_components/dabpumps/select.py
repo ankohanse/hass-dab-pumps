@@ -103,11 +103,9 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
-        super()._handle_coordinator_update()
-        
-        (_, _, status_map) = self._coordinator.data
         
         # find the correct device and status corresponding to this sensor
+        (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
 
         # Update any attributes
@@ -136,6 +134,7 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
             self._name = status.key
             
             self._attr_options = list(self._dict.values())
+            self._attr_current_option = None
             
             self._attr_entity_category = self.get_entity_category()
             

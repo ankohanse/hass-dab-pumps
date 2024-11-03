@@ -518,6 +518,10 @@ class DabPumpsApi:
     async def _async_update_diagnostics(self, timestamp, context: str, request: dict|None, response: dict|None, token: dict|None = None):
         # worker function
         async def _async_worker(self, timestamp, context, request, response, token):
+
+            # Wait one or two seconds to not interfere with the updating of the entities after retrieving the data
+            await asyncio.sleep(2)
+
             item = DabPumpsApiHistoryItem(timestamp, context, request, response, token)
             detail = DabPumpsApiHistoryDetail(timestamp, context, request, response, token)
             
