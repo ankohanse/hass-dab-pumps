@@ -98,6 +98,7 @@ DABPUMPS_API_TOKEN_TIME_MIN = 10 # seconds remaining before we re-login
 COORDINATOR_RETRY_ATTEMPTS = 10
 COORDINATOR_RETRY_DELAY = 5    # seconds
 COORDINATOR_TIMEOUT = 120   # seconds
+COORDINATOR_CACHE_WRITE_PERIOD = 300 # seconds
 
 API_LOGIN = types.SimpleNamespace()
 API_LOGIN.DABLIVE_APP_0 = 'DabLive_app_0'

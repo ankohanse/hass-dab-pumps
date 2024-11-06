@@ -37,6 +37,8 @@ from .api import (
     DabPumpsApiAuthError,
     DabPumpsApiRightsError,
     DabPumpsApiError,
+    DabPumpsApiHistoryItem,
+    DabPumpsApiHistoryDetail,
 )
 
 from .const import (
@@ -56,6 +58,7 @@ from .const import (
     COORDINATOR_RETRY_ATTEMPTS,
     COORDINATOR_RETRY_DELAY,
     COORDINATOR_TIMEOUT,
+    COORDINATOR_CACHE_WRITE_PERIOD,
     SIMULATE_MULTI_INSTALL,
     SIMULATE_SUFFIX_ID,
     SIMULATE_SUFFIX_NAME,
@@ -155,9 +158,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._user_role_ts = datetime.min
         self._user_role = 'CUSTOMER'
         
+        # Cache
+        self._cache = None
+        self._cache_last_write = datetime.min
+        
         # counters for diagnostics
         self._diag_retries = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
         self._diag_durations = { n: 0 for n in range(10) }
+        self._diag_api_counters = {}
+        self._diag_api_history = []
+        self._diag_api_details = {}
+        self._diag_api_data = {}
+
+        self._api.set_diagnostics(self._diag_api_handler)
 
         # Cached data in case communication to DAB Pumps fails
         self._hass = hass
@@ -203,7 +216,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         #_LOGGER.debug(f"install_map: {self._install_map}")
         return (self._install_map)
-    
+
     
     async def _async_update_data(self):
         """
@@ -214,9 +227,30 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         _LOGGER.debug(f"Update data")
 
+        if self._cache is None:
+            if self._store:
+                _LOGGER.debug(f"Read persisted cache")
+                store = await self._store.async_get_data() or {}
+                self._cache = store.get("cache", {})
+            else:
+                self._cache = {}
+
         # Note: asyncio.TimeoutError and aiohttp.ClientError are already
         # handled by the data update coordinator.
         await self._async_detect_data()
+
+        # Periodically persist the cache
+        if self._hass and \
+           self._store and \
+           self._cache and \
+           (datetime.now() - self._cache_last_write).total_seconds() > COORDINATOR_CACHE_WRITE_PERIOD:
+            
+            _LOGGER.debug(f"Persist cache")
+            self._cache_last_write = datetime.now()
+
+            store = await self._store.async_get_data() or {}
+            store["cache"] = self._cache
+            await self._store.async_set_data(store)
         
         #_LOGGER.debug(f"device_map: {self._device_map}")
         #_LOGGER.debug(f"config_map: {self._config_map}")
@@ -410,17 +444,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 pass
 
         if ex:
-            #  Finally, try from API history store 'details->installation list'
-            try:
-                data = await self._api.async_fallback_install_details(self._install_id)
-                await self._async_process_install_data(data)
-                await self._async_update_cache(context, data)
-                ex = None
-            except Exception as e:
-                # Try next alternative while remembering original exception
-                pass
-
-        if ex:
             # Force retry in calling function by raising original exception
             raise ex
 
@@ -586,7 +609,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._install_map_ts = datetime.now()
 
 
-    async def _async_process_install_list(self, data, ignore_empty=False):
+    async def _async_process_install_list(self, data):
         """
         Get installations list
         """
@@ -622,13 +645,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 )
                 install_map[install_id] = install
 
+        # Sanity check. # Never overwrite a known install_map with empty lists
+        if len(install_map)==0:
+            raise DabPumpsDataError(f"No installations found in data")
+
         # Remember this data
         self._install_map_ts = datetime.now()
-
-        if ignore_empty and len(install_map)==0:
-            pass
-        else:
-            self._install_map = install_map
+        self._install_map = install_map
 
 
     async def _async_process_install_data(self, data):
@@ -703,7 +726,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # Sanity check. # Never overwrite a known device_map, config_map or status_map with empty lists
         if len(device_map) == 0:
-            return
+            raise DabPumpsDataError(f"No devices found for installation id {install_id_org}")
         
         # Remember/update the found maps.
         self._device_map_ts = datetime.now()
@@ -812,8 +835,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             )
             status_map[entity_id] = item
 
-        _LOGGER.debug(f"DAB Pumps statusses found for '{device.name}' with {len(status_map)} values")        
+        if len(status_map) == 0:
+             raise DabPumpsDataError(f"No statusses found for '{device.name}'")
         
+        _LOGGER.debug(f"DAB Pumps statusses found for '{device.name}' with {len(status_map)} values")
+
         # Merge with statusses from other devices
         self._status_map_ts = datetime.now()
         self._status_map.update(status_map)
@@ -827,6 +853,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         messages = data.get('messages', {})
         string_map = { k: v for k, v in messages.items() }
         
+        # Sanity check. # Never overwrite a known string_map with empty lists
+        if len(string_map) == 0:
+            raise DabPumpsDataError(f"No strings found in data")
+
         _LOGGER.debug(f"DAB Pumps strings found: {len(string_map)} in language '{language}'")
         
         self._string_map_ts = datetime.now() if len(string_map) > 0 else datetime.min
@@ -835,52 +865,24 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 
     async def _async_update_cache(self, context, data):
-        # worker function
-        async def _async_worker(self, context, data):
-            if not self._store:
-                return
-            
-            # Retrieve cache file contents
-            store = await self._store.async_get_data() or {}
-            cache = store.get("cache", {})
-
-            data_old = cache.get(context, {})
-
-            # We only update the cached contents once a day to prevent too many writes of unchanged data
-            ts_str = data_old.get("ts", "")
-            ts_old = datetime.fromisoformat(ts_str) if ts_str else datetime.min
-            ts_new = datetime.now()
-
-            if (ts_new - ts_old).total_seconds() < 86400-300:   # 1 day minus 5 minutes
-                # Not expired yet
-                return
-
-            _LOGGER.debug(f"Update cache: {context}")
-        
-            # Update and write new cache file contents
-            cache[context] = { "ts": ts_new } | data
-            
-            store["cache"] = cache
-            await self._store.async_set_data(store)
-
-        # Create the worker task to update diagnostics in the background,
-        # but do not let main loop wait for it to finish
-        if self._hass:
+        """
+        Update the memory cache.
+        Persisted cache is saved periodicaly by another function
+        """
+        if self._cache:
             data["ts"] = datetime.now()
-            self._hass.async_create_task(_async_worker(self, context, data))
+            self._cache[context] = data
 
-    
+
     async def _async_fetch_from_cache(self, context):
-        if not self._store:
+        """
+        Fetch from the memory cache
+        """
+        if self._cache:
+            _LOGGER.debug(f"Fetch from cache: {context}")
+            return self._cache.get(context, {})
+        else:
             return {}
-        
-        _LOGGER.debug(f"Fetch from cache: {context}")
-        
-        store = await self._store.async_get_data() or {}
-        cache = store.get("cache", {})
-        data = cache.get(context, {})
-
-        return data
 
     
     async def async_get_diagnostics(self) -> dict[str, Any]:
@@ -895,11 +897,14 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         retries_total = sum(self._diag_retries.values()) or 1
         retries_counter = dict(sorted(self._diag_retries.items()))
         retries_percent = { key: round(100.0 * n / retries_total, 2) for key,n in retries_counter.items() }
+
         durations_total = sum(self._diag_durations.values()) or 1
         durations_counter = dict(sorted(self._diag_durations.items()))
         durations_percent = { key: round(100.0 * n / durations_total, 2) for key, n in durations_counter.items() }
-            
-        api_data = await self._api.async_get_diagnostics()
+
+        api_calls_total = sum([ n for key, n in self._diag_api_counters.items() ]) or 1
+        api_calls_counter = { key: n for key, n in self._diag_api_counters.items() }
+        api_calls_percent = { key: round(100.0 * n / api_calls_total, 2) for key, n in self._diag_api_counters.items() }
 
         return {
             "diagnostics_ts": datetime.now(),
@@ -929,7 +934,16 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "user_role_ts": self._user_role_ts,
                 "user_role": self._user_role
             },
-            "api": async_redact_data(api_data, DIAGNOSTICS_REDACT),
+            "cache": self._cache,
+            "api": {
+                "data": self._diag_api_data,
+                "calls": {
+                    "counter": api_calls_counter,
+                    "percent": api_calls_percent,
+                },                
+                "history": async_redact_data(self._diag_api_history, DIAGNOSTICS_REDACT),
+                "details": async_redact_data(self._diag_api_details, DIAGNOSTICS_REDACT),
+            }
         }
     
 
@@ -947,7 +961,28 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             else:
                 self._diag_durations[duration] += 1
 
-    
+
+    def _diag_api_handler(self, context, item:DabPumpsApiHistoryItem, detail:DabPumpsApiHistoryDetail, data:dict):
+        """Handle diagnostics updates from the api"""
+
+        # Call counters
+        if context in self._diag_api_counters:
+            self._diag_api_counters[context] += 1
+        else:
+            self._diag_api_counters[context] = 1
+
+        # Call history
+        self._diag_api_history.append(item)
+        while len(self._diag_api_history) > 64:
+            self._diag_api_history.pop(0)
+
+        # Call details
+        self._diag_api_details[context] = detail
+
+        # Api data
+        self._diag_api_data = self._diag_api_data | data
+
+
     @staticmethod
     def create_id(*args):
         str = '_'.join(args).strip('_')

@@ -8,16 +8,12 @@ import logging
 import re
 import time
 
-from collections import namedtuple
 from datetime import datetime
 from typing import Any
 from yarl import URL
 
-from homeassistant.components.diagnostics import REDACTED
-from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-from homeassistant.helpers.storage import Store
 
 
 from .const import (
@@ -30,7 +26,6 @@ from .const import (
     DABPUMPS_API_TOKEN_TIME_MIN,
     API_LOGIN,
     SIMULATE_SUFFIX_ID,
-    DIAGNOSTICS_REDACT,
 )
 
 
@@ -54,7 +49,7 @@ class DabPumpsApiFactory:
         api = hass.data[DOMAIN][API].get(key, None)
         if not api:
             # Create a new DabPumpsApi instance
-            api = DabPumpsApi(hass, username, password, use_history_store=True)
+            api = DabPumpsApi(hass, username, password)
             hass.data[DOMAIN][API][key] = api
         
         return api
@@ -67,7 +62,7 @@ class DabPumpsApiFactory:
         """
     
         # Create a new DabPumpsApi instance
-        api = DabPumpsApi(hass, username, password, use_history_store=False)
+        api = DabPumpsApi(hass, username, password)
     
         return api    
 
@@ -75,7 +70,7 @@ class DabPumpsApiFactory:
 # DabPumpsAPI to detect device and get device info, fetch the actual data from the Resol device, and parse it
 class DabPumpsApi:
     
-    def __init__(self, hass, username, password, use_history_store=True):
+    def __init__(self, hass, username, password):
         self._hass = hass
         self._username = username
         self._password = password
@@ -85,18 +80,13 @@ class DabPumpsApi:
         # We keep the same client for the whole life of the api instance.
         self._client:aiohttp.ClientSession = async_create_clientsession(self._hass)  
 
-        if use_history_store:
-            # maintain calls history for diagnostics during normal operations    
-            self._history_key = username.lower()
-            self._history_store = DabPumpsApiHistoryStore(hass, self._history_key)
+        # To pass diagnostics data back to our parent
+        self._diagnostics_callback = None
 
-            # Cleanup the history store after each restart.
-            asyncio.run_coroutine_threadsafe(self._async_cleanup_diagnostics(), hass.loop)
-        else:
-            # Use from a temporary coordinator during config-flow first time setup of component
-            self._history_key = None
-            self._history_store = None
 
+    def set_diagnostics(self, callback):
+        self._diagnostics_callback = callback
+        
 
     async def async_login(self):
         """Login to DAB Pumps by trying each of the possible login methods"""
@@ -298,14 +288,7 @@ class DabPumpsApi:
         }
 
         _LOGGER.debug(f"DAB Pumps retrieve installation list for '{self._username}' via {request["method"]} {request["url"]}")
-        (result, request, response) = await self._async_send_request_ex(context, request, diagnostics=False)   
-
-        # only update diagnostics if we actually received data
-        # this data is then used as fallback for async_fetch_install_details
-        values = result.get('values', [])
-        if values and len(values) > 0:
-            await self._async_update_diagnostics(timestamp, context, request, response)
-
+        result = await self._async_send_request(context, request)   
         return result
 
 
@@ -323,25 +306,6 @@ class DabPumpsApi:
         _LOGGER.debug(f"DAB Pumps retrieve installation details via {request["method"]} {request["url"]}")
         result = await self._async_send_request(context, request)
         return result
-
-
-    async def async_fallback_install_details(self, install_id):
-        """
-        Get installation details saved in history store 'details->installation list'
-        """
-        _LOGGER.debug(f"DAB Pumps retrieve installation details via history-store for {install_id}")
-        if not self._history_store:
-            return {}
-        
-        install_id_org = install_id.removesuffix(SIMULATE_SUFFIX_ID)
-        context = f"installation list"
-        
-        data = await self._history_store.async_get_data() or {}
-        installation_list = data.get("details", {}).get(context, {})
-        installations = installation_list.get("rsp", {}).get("json", {}).get("values", [])
-
-        installation = next( (install for install in installations if install.get("installation_id", "") == install_id_org), {})
-        return installation
 
 
     async def async_fetch_device_config(self, device):
@@ -485,95 +449,17 @@ class DabPumpsApi:
             return (json, request, response)
 
 
-    async def async_get_diagnostics(self) -> dict[str, Any]:
-        if not self._history_store:
-            return None
-            
-        data = await self._history_store.async_get_data() or {}
-        counter = data.get("counter", {})
-        history = data.get("history", [])
-        details = data.get("details", {})
-        
-        calls_total = sum([ n for key, n in counter.items() ]) or 1
-        calls_counter = { key: n for key, n in counter.items() }
-        calls_percent = { key: round(100.0 * n / calls_total, 2) for key, n in counter.items() }
-            
-        return {
-            "config": {
-                "username": self._username,
-                "password": self._password,
-            },
-            "data": {
-                "login_method": self._login_method,
-            },
-            "diagnostics": {
-                "counter": calls_counter,
-                "percent": calls_percent,
-                "history": history,
-                "details": details,
-            }
-        }
-    
-    
     async def _async_update_diagnostics(self, timestamp, context: str, request: dict|None, response: dict|None, token: dict|None = None):
-        # worker function
-        async def _async_worker(self, timestamp, context, request, response, token):
 
-            # Wait one or two seconds to not interfere with the updating of the entities after retrieving the data
-            await asyncio.sleep(2)
-
+        if self._diagnostics_callback:
             item = DabPumpsApiHistoryItem(timestamp, context, request, response, token)
             detail = DabPumpsApiHistoryDetail(timestamp, context, request, response, token)
-            
-            # Persist this history in file instead of keeping in memory
-            if not self._history_store:
-                return None
-            
-            data = await self._history_store.async_get_data() or {}
-            counter = data.get("counter", {})
-            history = data.get("history", [])
-            details = data.get("details", {})
-            
-            if context in counter:
-                counter[context] += 1
-            else:
-                counter[context] = 1
-            
-            history.append( async_redact_data(item, DIAGNOSTICS_REDACT) )
-            if len(history) > 64:
-                history.pop(0)
-            
-            details[context] = async_redact_data(detail, DIAGNOSTICS_REDACT)
-            
-            data["history"] = history
-            data["counter"] = counter
-            data["details"] = details
-            await self._history_store.async_set_data(data)
+            data = {
+                "login_method": self._login_method,
+            }
 
-        # Create the worker task to update diagnostics in the background,
-        # but do not let main loop wait for it to finish
-        if self._hass:
-            self._hass.async_create_task(_async_worker(self, timestamp, context, request, response, token))
-
-
-    async def _async_cleanup_diagnostics(self):
-        # worker function
-        async def _async_worker(self):
-            # Sanity check
-            if not self._history_store:
-                return None
-            
-            # Only the counter part is reset.
-            # We retain the history and details information as we rely on it if communication to DAB Pumps fails.
-            data = await self._history_store.async_get_data() or {}
-            data["counter"] = {}
-            await self._history_store.async_set_data(data)
-
-        # Create the worker task to update diagnostics in the background,
-        # but do not let main loop wait for it to finish
-        if self._hass:
-            self._hass.async_create_task(_async_worker(self))
-
+            self._diagnostics_callback(context, item, detail, data)
+    
 
 class DabPumpsApiAuthError(Exception):
     """Exception to indicate authentication failure."""
@@ -585,54 +471,6 @@ class DabPumpsApiError(Exception):
     """Exception to indicate generic error failure."""    
     
     
-class DabPumpsApiHistoryStore(Store[dict]):
-    
-    _STORAGE_VERSION_MAJOR = 2
-    _STORAGE_VERSION_MINOR = 0
-    _STORAGE_KEY_HISTORY = DOMAIN + ".api_history"
-    
-    def __init__(self, hass, key):
-        super().__init__(
-            hass, 
-            key=self._STORAGE_KEY_HISTORY, 
-            version=self._STORAGE_VERSION_MAJOR, 
-            minor_version=self._STORAGE_VERSION_MINOR
-        )
-        self._key = key
-
-    
-    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
-        """Migrate the history store data"""
-
-        if old_major_version <= 1:
-            # version 1 had a flat structure and did not take into account to have multiple installations (with different username+password)
-            old_data = {
-                self._key: old_data
-            }
-
-        if old_major_version <= 2:
-            # version 2 is the current version. No migrate needed
-            data = old_data
-
-        return data
-    
-
-    async def async_get_data(self):
-        """Load the persisted api_history file and return the data specific for this api instance"""
-        data = await super().async_load() or {}
-        data_self = data.get(self._key, {})
-
-        return data_self
-    
-
-    async def async_set_data(self, data_self):
-        """Save the data specific for this api instance into the persisted api_history file"""
-        data = await super().async_load() or {}
-        data[self._key] = data_self
-
-        await super().async_save(data)
-
-
 class DabPumpsApiHistoryItem(dict):
     def __init__(self, timestamp, context: str , request: dict|None, response: dict|None, token: dict|None):
         item = { 
