@@ -158,10 +158,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._user_role_ts = datetime.min
         self._user_role = 'CUSTOMER'
         
-        # Cache
-        self._cache = None
-        self._cache_last_write = datetime.min
-        
         # counters for diagnostics
         self._diag_retries = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
         self._diag_durations = { n: 0 for n in range(10) }
@@ -172,10 +168,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         self._api.set_diagnostics(self._diag_api_handler)
 
-        # Cached data in case communication to DAB Pumps fails
+        # Persisted cached data in case communication to DAB Pumps fails
         self._hass = hass
         self._store_key = install_id
         self._store = DabPumpsCoordinatorStore(hass, self._store_key)
+        self._cache = None
+        self._cache_last_write = datetime.min
 
 
     @property
@@ -227,6 +225,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         _LOGGER.debug(f"Update data")
 
+        # Make sure our cache is available
         if self._cache is None:
             if self._store:
                 _LOGGER.debug(f"Read persisted cache")
