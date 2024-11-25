@@ -324,6 +324,7 @@ class DabPumpsEntity(Entity):
             case '%':           return '%'
             case 'V':           return 'V'
             case 'A':           return 'A'
+            case 'W':           return 'W'
             case 'kW':          return 'kW'
             case 'kWh':         return 'kWh'
             case 'Address':     return None
@@ -366,6 +367,7 @@ class DabPumpsEntity(Entity):
             case 'A':       return 'mdi:lightning-bolt'
             case 'V':       return 'mdi:lightning-bolt'
             case 'W':       return 'mdi:power-plug'
+            case 'kW':      return 'mdi:power-plug'
             case 'Wh':      return 'mdi:lightning'
             case 'kWh':     return 'mdi:lightning'
             case _:         return None
@@ -398,9 +400,10 @@ class DabPumpsEntity(Entity):
             case 'MB':      return NumberDeviceClass.DATA_SIZE
             case 'kB/s':    return NumberDeviceClass.DATA_RATE
             case '%':       return NumberDeviceClass.POWER_FACTOR
-            case 'A ':      return NumberDeviceClass.CURRENT
-            case 'V ':      return NumberDeviceClass.VOLTAGE
-            case 'W ':      return NumberDeviceClass.POWER
+            case 'A':       return NumberDeviceClass.CURRENT
+            case 'V':       return NumberDeviceClass.VOLTAGE
+            case 'W':       return NumberDeviceClass.POWER
+            case 'kW':      return NumberDeviceClass.POWER
             case 'Wh':      return NumberDeviceClass.ENERGY
             case 'kWh':     return NumberDeviceClass.ENERGY
             case _:         return None
@@ -433,9 +436,10 @@ class DabPumpsEntity(Entity):
             case 'MB':      return SensorDeviceClass.DATA_SIZE
             case 'kB/s':    return SensorDeviceClass.DATA_RATE
             case '%':       return SensorDeviceClass.POWER_FACTOR
-            case 'A ':      return SensorDeviceClass.CURRENT
-            case 'V ':      return SensorDeviceClass.VOLTAGE
-            case 'W ':      return SensorDeviceClass.POWER
+            case 'A':       return SensorDeviceClass.CURRENT
+            case 'V':       return SensorDeviceClass.VOLTAGE
+            case 'W':       return SensorDeviceClass.POWER
+            case 'kW':      return SensorDeviceClass.POWER
             case 'Wh':      return SensorDeviceClass.ENERGY
             case 'kWh':     return SensorDeviceClass.ENERGY
             case _:         return None
