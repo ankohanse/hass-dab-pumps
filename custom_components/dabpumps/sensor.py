@@ -174,12 +174,12 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
             changed = True
         
         # additional check for TOTAL and TOTAL_INCREASING values:
-        # ignore decreases that are not significant (less than 10% change)
+        # ignore decreases that are not significant (less than 50% change)
         if self._attr_state_class in [SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING] and \
            self._attr_native_value is not None and \
            attr_val is not None and \
            attr_val < self._attr_native_value and \
-           not check_percentage_change(self._attr_native_value, attr_val, 10):
+           not check_percentage_change(self._attr_native_value, attr_val, 50):
             
             _LOGGER.debug(f"Ignore non-significant decrease in sensor '{status.key}' ({status.unique_id}) from {self._attr_native_value} to {attr_val}")
             attr_val = self._attr_native_value
