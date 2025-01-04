@@ -84,7 +84,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     #
     await coordinator.async_config_entry_first_refresh()
     
-    # Forward to all platforms (sensor, switch, ...)
+    # Create devices
+    await coordinator.async_create_devices(config_entry)
+    
+    # Create entities for all platforms (sensor, switch, ...)
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     # Reload entry when it is updated

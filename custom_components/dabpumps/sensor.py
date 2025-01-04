@@ -165,11 +165,6 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
             self._attr_device_class = self.get_sensor_device_class() 
             self._attr_device_info = DeviceInfo(
                identifiers = {(DOMAIN, self._device.serial)},
-               name = self._device.name,
-               manufacturer =  self._device.vendor,
-               model = self._device.product,
-               serial_number = self._device.serial,
-               hw_version = self._device.version,
             )
             changed = True
         

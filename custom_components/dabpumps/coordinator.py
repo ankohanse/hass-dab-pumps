@@ -18,6 +18,8 @@ from homeassistant.core import callback
 from homeassistant.core import HomeAssistant
 from homeassistant.core import async_get_hass
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
@@ -59,6 +61,7 @@ from .const import (
     COORDINATOR_RETRY_DELAY,
     COORDINATOR_TIMEOUT,
     COORDINATOR_CACHE_WRITE_PERIOD,
+    DEVICE_ATTR_EXTRA,
     SIMULATE_MULTI_INSTALL,
     SIMULATE_SUFFIX_ID,
     SIMULATE_SUFFIX_NAME,
@@ -68,7 +71,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 DabPumpsInstall = namedtuple('DabPumpsInstall', 'id, name, description, company, address, role, devices')
-DabPumpsDevice = namedtuple('DabPumpsDevice', 'id, serial, name, vendor, product, version, config_id, install_id')
+DabPumpsDevice = namedtuple('DabPumpsDevice', 'id, serial, name, vendor, product, hw_version, sw_version, config_id, install_id, mac_address')
 DabPumpsConfig = namedtuple('DabPumpsConfig', 'id, label, description, meta_params')
 DabPumpsParams = namedtuple('DabPumpsParams', 'key, type, unit, weight, values, min, max, family, group, view, change, log, report')
 DabPumpsStatus = namedtuple('DabPumpsStatus', 'serial, unique_id, key, val')
@@ -215,7 +218,34 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         #_LOGGER.debug(f"install_map: {self._install_map}")
         return (self._install_map)
 
-    
+
+    async def async_create_devices(self, config_entry: ConfigEntry):
+        """
+        Add all detected devices to the hass device_registry
+        """
+
+        install_id = config_entry.data[CONF_INSTALL_ID]
+        install_name = config_entry.data[CONF_INSTALL_NAME]
+
+        _LOGGER.info(f"Create devices for installation '{install_name}' ({install_id})")
+        dr = device_registry.async_get(self.hass)
+       
+        for device in self._device_map.values():
+            _LOGGER.debug(f"Create device {device.serial} ({DabPumpsCoordinator.create_id(device.name)})")
+
+            dr.async_get_or_create(
+                config_entry_id = config_entry.entry_id,
+                identifiers = {(DOMAIN, device.serial)},
+                connections = {(CONNECTION_NETWORK_MAC, device.mac_address)} if device.mac_address else None,
+                name = device.name,
+                manufacturer =  device.vendor,
+                model = device.product,
+                serial_number = device.serial,
+                hw_version = device.hw_version,
+                sw_version = device.sw_version,
+            )
+
+
     async def _async_update_data(self):
         """
         Fetch sensor data from API.
@@ -347,6 +377,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
                 # Attempt to refresh the list of installations (once a day, just for diagnostocs)
                 await self._async_detect_installations(ignore_exception=True)
+
+                # Update device parameters that are derived from statusses instead of install_details
+                self._update_devices()
 
                 # Keep track of how many retries were needed and duration
                 self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
@@ -683,7 +716,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             dum_serial = dum.get('serial', None) or ''
             dum_name = dum.get('name', None) or dum.get('ProductName', None) or f"device {dum_idx}"
             dum_product = dum.get('ProductName', None) or f"device {dum_idx}"
-            dum_version = dum.get('configuration_name', None) or ''
+            dum_hw_version = dum.get('configuration_name', None) or ''
             dum_config = dum.get('configuration_id', None) or ''
 
             if not dum_serial: 
@@ -701,9 +734,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 id = device_id,
                 serial = device_serial,
                 product = dum_product,
-                version = dum_version,
+                hw_version = dum_hw_version,
                 config_id = dum_config,
                 install_id = install_id,
+                # Not retrieved from install details, but added later from statusses
+                mac_address = None, 
+                sw_version = None,
             )
             device_map[device_serial] = device
 
@@ -882,6 +918,36 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return self._cache.get(context, {})
         else:
             return {}
+        
+
+    def _update_devices(self):
+        """
+        Update device_map with extra attributes derived from statusses
+        """
+
+        for device_serial in list(self._device_map.keys()):
+
+            device = self._device_map[device_serial]
+            device_dict = device._asdict()
+            device_changed = False
+
+            # Search for specific statusses
+            for attr,status_keys in DEVICE_ATTR_EXTRA.items():
+                for status_key in status_keys:
+
+                    # Try to find a status for this key and device
+                    entity_id = DabPumpsCoordinator.create_id(device_serial, status_key)
+                    status = self._status_map.get(entity_id, None)
+                    
+                    if status is not None and status.val is not None:
+                        # Found it. Update the device attribute (workaround via dict because it is a namedtuple)
+                        if getattr(device, attr) != status.val:
+                            _LOGGER.debug(f"Found extra device attribute {device.serial} {attr} = {status.val}")
+                            device_dict[attr] = status.val
+                            device_changed = True
+
+            if device_changed:
+                self._device_map[device_serial] = DabPumpsDevice(**device_dict)
 
     
     async def async_get_diagnostics(self) -> dict[str, Any]:
