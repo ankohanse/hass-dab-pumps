@@ -94,30 +94,10 @@ SWITCH_VALUES_ON = ['1', 'Enable']
 SWITCH_VALUES_OFF = ['0', 'Disable']
 SWITCH_VALUES_ALL = SWITCH_VALUES_ON + SWITCH_VALUES_OFF
 
-
-DABPUMPS_SSO_URL = "https://dabsso.dabpumps.com"
-DABPUMPS_API_URL = "https://dconnect.dabpumps.com"
-DABPUMPS_API_DOMAIN = "dconnect.dabpumps.com"
-DABPUMPS_API_TOKEN_COOKIE = "dabcsauthtoken"
-DABPUMPS_API_TOKEN_TIME_MIN = 10 # seconds remaining before we re-login
-
 COORDINATOR_RETRY_ATTEMPTS = 10
 COORDINATOR_RETRY_DELAY = 5    # seconds
 COORDINATOR_TIMEOUT = 120   # seconds
 COORDINATOR_CACHE_WRITE_PERIOD = 300 # seconds
-
-API_LOGIN = types.SimpleNamespace()
-API_LOGIN.DABLIVE_APP_0 = 'DabLive_app_0'
-API_LOGIN.DABLIVE_APP_1 = 'DabLive_app_1'
-API_LOGIN.DCONNECT_APP = 'DConnect_app'
-API_LOGIN.DCONNECT_WEB = 'DConnect_web'
-
-
-# Debug: set this constant to True to simulate a configuration with multiple installations for one DAB account
-SIMULATE_MULTI_INSTALL = False
-SIMULATE_SUFFIX_ID = "_test"
-SIMULATE_SUFFIX_NAME = " (test)"
-
 
 STARTUP_MESSAGE = f"""
 ----------------------------------------------------------------------------
