@@ -77,12 +77,6 @@ LANGUAGE_MAP = {
     # "": "Thai"
 }
 
-# Extra device attributes that are not in install info, but retrieved from statusses
-DEVICE_ATTR_EXTRA = {
-    "mac_address": ['MacWlan'],
-    "sw_version": ['LvFwVersion', 'ucVersion']
-}
-
 LANGUAGE_TEXT_AUTO ="Auto (use system setting: {0})"
 LANGUAGE_TEXT_FALLBACK ="Auto (use default: {0})"
 

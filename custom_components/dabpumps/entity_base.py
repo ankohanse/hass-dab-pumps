@@ -161,9 +161,10 @@ class DabPumpsEntityHelper:
                 continue
                 
             # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
+            unique_id = DabPumpsCoordinator.create_id(device.name, status.key)
             entity = None                
             try:
-                entity = target_class(self.coordinator, self.install_id, object_id, device, params, status)
+                entity = target_class(self.coordinator, self.install_id, object_id, unique_id, device, params, status)
                 entities.append(entity)
             except Exception as  ex:
                 _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
@@ -333,7 +334,7 @@ class DabPumpsEntity(Entity):
             case 'None' | None: return None
             
             case _:
-                _LOGGER.warn(f"DAB Pumps encountered a unit or measurement '{self._params.unit}' for '{self._params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
+                _LOGGER.warning(f"DAB Pumps encountered a unit or measurement '{self._params.unit}' for '{self._params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
                 return self._params.unit
     
     

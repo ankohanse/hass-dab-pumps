@@ -42,7 +42,7 @@ class DabPumpsApiFactory:
             client = async_create_clientsession(hass)  
 
             # Create a new DabPumpsApi instance
-            api = DabPumpsApi(hass, username, password, client=client)
+            api = DabPumpsApi(username, password, client=client)
 
             # Remember this DabPumpsApi instance
             hass.data[DOMAIN][API][key] = api
@@ -60,7 +60,7 @@ class DabPumpsApiFactory:
         client = async_create_clientsession(hass)  
     
         # Create a new DabPumpsApi instance
-        api = DabPumpsApi(hass, username, password, client=client)
+        api = DabPumpsApi(username, password, client=client)
     
         return api    
 

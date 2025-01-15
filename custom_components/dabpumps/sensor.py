@@ -29,6 +29,11 @@ from datetime import datetime
 from collections import defaultdict
 from collections import namedtuple
 
+from aiodabpumps import (
+    DabPumpsDevice,
+    DabPumpsParams,
+    DabPumpsStatus
+)
 
 from .const import (
     DOMAIN,
@@ -36,6 +41,10 @@ from .const import (
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
+)
+
+from .coordinator import (
+    DabPumpsCoordinator,
 )
 
 from .entity_base import (
@@ -65,22 +74,42 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
-        """ Initialize the sensor. """
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, unique_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+        """ 
+        Initialize the sensor. 
+        """
+
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, params)
         
-        # The unique identifier for this sensor within Home Assistant
-        self.object_id = object_id
-        self.entity_id = ENTITY_ID_FORMAT.format(status.unique_id)
+        # The unique identifiers for this sensor within Home Assistant
+        self.object_id = object_id                          # Device.serial + status.key
+        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
         
         self._coordinator = coordinator
         self._device = device
         self._params = params
         
-        # Create all attributes
-        self._update_attributes(status, True)
+        # update creation-time only attributes
+        _LOGGER.debug(f"Create entity '{self.entity_id}'")
+        
+        self._attr_unique_id = unique_id
+        
+        self._attr_has_entity_name = True
+        self._attr_name = self._get_string(status.key)
+        self._name = status.key
+        
+        self._attr_state_class = self.get_sensor_state_class()
+        self._attr_entity_category = self.get_entity_category()
+
+        self._attr_device_class = self.get_sensor_device_class() 
+        self._attr_device_info = DeviceInfo(
+            identifiers = {(DOMAIN, self._device.serial)},
+        )
+        
+        # Create all value related attributes
+        self._update_attributes(status, force=True)
     
     
     @property
@@ -108,14 +137,15 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         # find the correct device and status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
+        if not status:
+            return
 
         # Update any attributes
-        if status:
-            if self._update_attributes(status, False):
-                self.async_write_ha_state()
+        if self._update_attributes(status):
+            self.async_write_ha_state()
     
     
-    def _update_attributes(self, status, is_create):
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
         
         # Transform values according to the metadata params for this status/sensor
         match self._params.type:
@@ -139,35 +169,13 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
 
             case 'label' | _:
                 if self._params.type != 'label':
-                    _LOGGER.warn(f"DAB Pumps encountered an unknown sensor type '{self._params.type}' for '{self._params.key}'. Please contact the integration developer to have this resolved.")
+                    _LOGGER.warning(f"DAB Pumps encountered an unknown sensor type '{self._params.type}' for '{self._params.key}'. Please contact the integration developer to have this resolved.")
                     
                 # Convert to string
                 attr_precision = None
                 attr_val = self._get_string(str(status.val)) if status.val!=None else None
                 attr_unit = None
 
-        # Process any changes
-        changed = False
-        
-        # update creation-time only attributes
-        if is_create:
-            _LOGGER.debug(f"Create sensor '{status.key}' ({status.unique_id})")
-            
-            self._attr_unique_id = status.unique_id
-            
-            self._attr_has_entity_name = True
-            self._attr_name = self._get_string(status.key)
-            self._name = status.key
-            
-            self._attr_state_class = self.get_sensor_state_class()
-            self._attr_entity_category = self.get_entity_category()
-
-            self._attr_device_class = self.get_sensor_device_class() 
-            self._attr_device_info = DeviceInfo(
-               identifiers = {(DOMAIN, self._device.serial)},
-            )
-            changed = True
-        
         # additional check for TOTAL and TOTAL_INCREASING values:
         # ignore decreases that are not significant (less than 50% change)
         if self._attr_state_class in [SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING] and \
@@ -176,17 +184,19 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
            attr_val < self._attr_native_value and \
            not check_percentage_change(self._attr_native_value, attr_val, 50):
             
-            _LOGGER.debug(f"Ignore non-significant decrease in sensor '{status.key}' ({status.unique_id}) from {self._attr_native_value} to {attr_val}")
+            _LOGGER.debug(f"Ignore non-significant decrease in sensor '{status.key}' ({self.unique_id}) from {self._attr_native_value} to {attr_val}")
             attr_val = self._attr_native_value
 
         # update value if it has changed
-        if is_create or self._attr_native_value != attr_val:
+        if self._attr_native_value != attr_val or force:
+
             self._attr_native_value = attr_val
             self._attr_native_unit_of_measurement = attr_unit
             self._attr_suggested_display_precision = attr_precision
             
             self._attr_icon = self.get_icon()
-            changed = True
+            return True
         
-        return changed
+        # No changes
+        return False
     
