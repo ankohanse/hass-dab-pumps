@@ -71,7 +71,7 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, unique_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -84,6 +84,8 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a select entity")
 
         # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
         self.object_id = object_id                          # Device.serial + status.key
         self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
@@ -137,9 +139,11 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
         
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
+        """
+        Handle updated data from the coordinator.
+        """
         
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
         if not status:
@@ -151,13 +155,14 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
     
     
     def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
-        
+        """
+        Set entity value, unit and icon
+        """
+
         # update value if it has changed
-        attr_val = self._dict.get(status.val, status.val) if status.val!=None else None
+        if self._attr_current_option != status.value or force:
 
-        if self._attr_current_option != attr_val or force:
-
-            self._attr_current_option = attr_val
+            self._attr_current_option = status.value
             self._attr_unit_of_measurement = self.get_unit()
             
             self._attr_icon = self.get_icon()
@@ -168,12 +173,14 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
     
     
     async def async_select_option(self, option: str) -> None:
-        """Change the selected option"""
-        data_val = next((k for k,v in self._dict.items() if v == option), None)
-        if data_val:
-            _LOGGER.info(f"Set {self.entity_id} to {option} ({data_val})")
-                
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, data_val)
+        """
+        Change the selected option
+        """
+
+        # Pass the status.code and not the translated status.value
+        code = next((code for code,value in self._dict.items() if value == option), None)
+        if code is not None:
+            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_current_option = option
                 self.async_write_ha_state()

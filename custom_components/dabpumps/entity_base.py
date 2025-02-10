@@ -129,12 +129,12 @@ class DabPumpsEntityHelper:
         
         other_platforms = [p for p in PLATFORMS if p != target_platform]
         
-        _LOGGER.debug(f"Create entities for installation '{self.install_name}' ({self.install_id})")
+        _LOGGER.debug(f"Create {target_platform} entities for installation '{self.install_name}' ({self.install_id})")
 
         # Iterate all statusses to create sensor entities
         entities = []
         for object_id, status in status_map.items():
-            
+
             # skip statusses that are not associated with a device in this installation
             device = device_map.get(status.serial, None)
             if not device or device.install_id != self.install_id:
@@ -145,26 +145,24 @@ class DabPumpsEntityHelper:
                 continue
             
             if not config.meta_params or status.key not in config.meta_params:
-                _LOGGER.warning(f"Device metadata holds no info to create a sensor for '{status.key}' with value '{status.val}'.")
+                _LOGGER.warning(f"Device metadata holds no info to create a sensor for '{status.key}' with value '{status.value}'.")
                 continue
             
             params = config.meta_params[status.key]
-            
+
             if not self._is_entity_whitelisted(params):
                 # Some statusses (error1...error64) are deliberately skipped
                 continue
             
             platform = self._get_entity_platform(params)
-            
             if platform != target_platform:
                 # This status will be handled via another platform
                 continue
                 
             # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
-            unique_id = DabPumpsCoordinator.create_id(device.name, status.key)
             entity = None                
             try:
-                entity = target_class(self.coordinator, self.install_id, object_id, unique_id, device, params, status)
+                entity = target_class(self.coordinator, self.install_id, object_id, device, params, status)
                 entities.append(entity)
             except Exception as  ex:
                 _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")

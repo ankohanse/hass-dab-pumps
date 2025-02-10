@@ -72,7 +72,7 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, unique_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -85,6 +85,8 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a number entity")
 
         # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
         self.object_id = object_id                          # Device.serial + status.key
         self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
@@ -96,13 +98,11 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         # Prepare attributes
         if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
             # Convert to float
-            attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
             attr_min = float(self._params.min) if self._params.min is not None else None
             attr_max = float(self._params.max) if self._params.max is not None else None
             attr_step = self._params.weight
         else:
             # Convert to int
-            attr_precision = 0
             attr_min = int(self._params.min) if self._params.min is not None else None
             attr_max = int(self._params.max) if self._params.max is not None else None
             attr_step = self.get_number_step()
@@ -153,9 +153,11 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
+        """
+        Handle updated data from the coordinator.
+        """
 
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this entity
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
         if not status:
@@ -167,21 +169,14 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     
     
     def _update_attributes(self, status: DabPumpsStatus, force: bool = False):
-        
-        # Prepare attributes
-        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
-            # Convert to float
-            attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
-            attr_val = round(float(status.val) * self._params.weight, attr_precision) if status.val is not None else None
-        else:
-            # Convert to int
-            attr_precision = 0
-            attr_val = int(status.val) if status.val is not None else None
-        
-        # update value if it has changed
-        if self._attr_native_value != attr_val or force:
+        """
+        Set entity value, unit and icon
+        """
 
-            self._attr_native_value = attr_val
+        # update value if it has changed
+        if self._attr_native_value != status.value or force:
+
+            self._attr_native_value = status.value
             self._attr_native_unit_of_measurement = self.get_unit()
             
             self._attr_icon = self.get_icon()
@@ -193,19 +188,11 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     
     
     async def async_set_native_value(self, value: float) -> None:
-        """Change the selected option"""
+        """
+        Change the selected value
+        """
         
-        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
-            # Convert from float to int
-            data_val = int(round(value / self._params.weight))
-        else:
-            # Convert to int
-            data_val = int(value)
-            value = int(value)
-            
-        _LOGGER.info(f"Set {self.entity_id} to {value} ({data_val})")
-        
-        success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, data_val)
+        success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, value=value)
         if success:
             self._attr_native_value = value
             self.async_write_ha_state()

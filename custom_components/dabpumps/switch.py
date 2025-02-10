@@ -79,7 +79,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, unique_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -92,6 +92,8 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a select entity")
 
         # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
         self.object_id = object_id                          # Device.serial + status.key
         self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
@@ -144,7 +146,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
         if not status:
@@ -156,14 +158,16 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     
     
     def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
+        """
+        Set entity value, unit and icon
+        """
         
-        # Process any changes
-        val = self._params.values.get(status.val, status.val)
-        if val in SWITCH_VALUES_ON:
+        # Use original status.code, not translated status.value to compare
+        if status.code in SWITCH_VALUES_ON:
             attr_is_on = True
             attr_state = STATE_ON
             
-        elif val in SWITCH_VALUES_OFF:
+        elif status.code in SWITCH_VALUES_OFF:
             attr_is_on = False
             attr_state = STATE_OFF
 
@@ -187,12 +191,14 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     
     
     async def async_turn_on(self, **kwargs) -> None:
-        """Turn the entity on."""
-        data_val = next((k for k,v in self._dict.items() if k in SWITCH_VALUES_ON or v in SWITCH_VALUES_ON), None)
-        if data_val:
-            _LOGGER.info(f"Set {self.entity_id} to ON ({data_val})")
-            
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, data_val)
+        """
+        Turn the entity on.
+        """
+
+        # Pass the status.code and not the translated status.value
+        code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_ON or value in SWITCH_VALUES_ON), None)
+        if code:
+            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_is_on = True
                 self._attr_state = STATE_ON
@@ -200,12 +206,14 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     
     
     async def async_turn_off(self, **kwargs) -> None:
-        """Turn the entity off."""
-        data_val = next((k for k,v in self._dict.items() if k in SWITCH_VALUES_OFF or v in SWITCH_VALUES_OFF), None)
-        if data_val:
-            _LOGGER.info(f"Set {self.entity_id} to OFF ({data_val})")
-            
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, data_val)
+        """
+        Turn the entity off.
+        """
+
+        # Pass the status.code and not the translated status.value
+        code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_OFF or value in SWITCH_VALUES_OFF), None)
+        if code:
+            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_is_on = False
                 self._attr_state = STATE_OFF

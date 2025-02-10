@@ -74,7 +74,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, unique_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -83,6 +83,8 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         DabPumpsEntity.__init__(self, coordinator, params)
         
         # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
         self.object_id = object_id                          # Device.serial + status.key
         self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
@@ -132,9 +134,11 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
     
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
+        """
+        Handle updated data from the coordinator.
+        """
 
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
         if not status:
@@ -146,35 +150,23 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
     
     
     def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
-        
-        # Transform values according to the metadata params for this status/sensor
+        """
+        Set entity value, unit and icon
+        """
+
+        # Gather attributes
+        attr_val = status.value
+        attr_unit = self.get_unit();
+
         match self._params.type:
             case 'measure':
-                if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
-                    # Convert to float
+                if self._params.weight and self._params.weight != 0:
                     attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
-                    attr_val = round(float(status.val) * self._params.weight, attr_precision) if status.val!=None else None
-                    attr_unit = self.get_unit()
                 else:
-                    # Convert to int
-                    attr_precision = 0
-                    attr_val = int(status.val) if status.val!=None else None
-                    attr_unit = self.get_unit()
-                    
-            case 'enum':
-                # Lookup the dict string for the value and otherwise return the value itself
+                    attr_precision = 0;
+        
+            case 'enum' | 'label' | _:
                 attr_precision = None
-                attr_val = self._get_string(self._params.values.get(status.val, status.val)) if status.val!=None else None
-                attr_unit = None
-
-            case 'label' | _:
-                if self._params.type != 'label':
-                    _LOGGER.warning(f"DAB Pumps encountered an unknown sensor type '{self._params.type}' for '{self._params.key}'. Please contact the integration developer to have this resolved.")
-                    
-                # Convert to string
-                attr_precision = None
-                attr_val = self._get_string(str(status.val)) if status.val!=None else None
-                attr_unit = None
 
         # additional check for TOTAL and TOTAL_INCREASING values:
         # ignore decreases that are not significant (less than 50% change)

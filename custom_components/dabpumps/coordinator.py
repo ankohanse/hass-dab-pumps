@@ -42,6 +42,11 @@ from aiodabpumps import (
     DabPumpsApiRightsError,
     DabPumpsApiHistoryItem,
     DabPumpsApiHistoryDetail,
+    DabPumpsInstall,
+    DabPumpsDevice, 
+    DabPumpsConfig, 
+    DabPumpsParams, 
+    DabPumpsStatus, 
     DabPumpsRet,
 ) 
 
@@ -73,11 +78,6 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-DabPumpsInstall = namedtuple('DabPumpsInstall', 'id, name, description, company, address, role, devices')
-DabPumpsDevice = namedtuple('DabPumpsDevice', 'id, serial, name, vendor, product, hw_version, sw_version, config_id, install_id, mac_address')
-DabPumpsConfig = namedtuple('DabPumpsConfig', 'id, label, description, meta_params')
-DabPumpsParams = namedtuple('DabPumpsParams', 'key, type, unit, weight, values, min, max, family, group, view, change, log, report')
-DabPumpsStatus = namedtuple('DabPumpsStatus', 'serial, unique_id, key, val')
 
 
 class DabPumpsCoordinatorFactory:
@@ -197,6 +197,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return self.hass.config.language.split('-', 1)[0] # split from 'en-GB' to just 'en'
 
 
+    def create_id(self, *args):
+        return self._api.create_id(*args)
+
+
     async def async_config_flow_data(self):
         """
         Fetch installation data from API.
@@ -220,7 +224,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         dr: DeviceRegistry = device_registry.async_get(self.hass)
        
         for device in self._api.device_map.values():
-            _LOGGER.debug(f"Create device {device.serial} ({DabPumpsCoordinator.create_id(device.name)})")
+            _LOGGER.debug(f"Create device {device.serial} ({device.name})")
 
             dr.async_get_or_create(
                 config_entry_id = config_entry.entry_id,
@@ -276,7 +280,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return (self._api.device_map, self._api.config_map, self._api.status_map)
     
     
-    async def async_modify_data(self, object_id: str, entity_id: str, value: Any):
+    async def async_modify_data(self, object_id: str, entity_id: str, code: Any|None, value: Any|None):
         """
         Set an entity param via the API.
         """
@@ -284,13 +288,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if not status:
             # Not found
             return False
-            
-        if status.val == value:
-            # Not changed
-            return False
-        
+
         # update the remote value
-        return await self._async_change_device_status(status, value)
+        return await self._async_change_device_status(status, code=code, value=value)
    
     
     async def _async_detect_install_list(self):
@@ -346,23 +346,20 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         # Ignore and use persisted cached data if this is the initial retrieve
                         pass
 
-                # Attempt to refresh installation details and devices when the cached one expires (once a day)
+                # Once a day, attempt to refresh
+                # - list of translations
+                # - list of installations (just for diagnostocs)
+                # - installation details and devices
+                # - additional device details
+                # - device configurations
+                await self._async_detect_strings()
+                await self._async_detect_installations(ignore_exception=True)
                 await self._async_detect_install_details()
-
-                # Attempt to refresh additional device details (once a day)
                 await self._async_detect_device_details()
-
-                # Attempt to refresh device configurations (once a day)
                 await self._async_detect_device_configs()
 
-                # Fetch device statusses (always)
+                # Always fetch device statusses
                 await self._async_detect_device_statusses()
-
-                # Attempt to refresh the list of translations (once a day)
-                await self._async_detect_strings()
-
-                # Attempt to refresh the list of installations (once a day, just for diagnostocs)
-                await self._async_detect_installations(ignore_exception=True)
 
                 # Keep track of how many retries were needed and duration
                 self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
@@ -389,7 +386,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return False
     
         
-    async def _async_change_device_status(self, status: DabPumpsStatus, value: Any):
+    async def _async_change_device_status(self, status: DabPumpsStatus, code: Any|None, value: Any|None):
         error = None
         ts_start = datetime.now()
 
@@ -398,7 +395,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 await self._api.async_login()
                 
                 # Attempt to change the device status via the API
-                await self._api.async_change_device_status(status.serial, status.key, value)
+                await self._api.async_change_device_status(status.serial, status.key, code=code, value=value)
 
                 # Keep track of how many retries were needed and duration
                 self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
@@ -496,7 +493,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 # Next try from persisted cache if this is the initial retrieve
                 try:
                     raw = await self._async_fetch_from_cache(context)
-                    await self._api.async_fetch_device_details(device.serial, raw=raw)
+                    await self._api.async_fetch_device_details(device.serial, raw=raw, ret=DabPumpsRet.NONE)
                     ex = None
                 except Exception:
                     # Try next alternative while remembering original exception
@@ -538,7 +535,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 # Next try from persisted cache if this is the initial retrieve
                 try:
                     raw = await self._async_fetch_from_cache(context)
-                    await self._api.async_fetch_device_config(device.config_id, raw=raw)
+                    await self._api.async_fetch_device_config(device.config_id, raw=raw, ret=DabPumpsRet.NONE)
                     ex = None
                 except Exception:
                     # Try next alternative while remembering original exception
@@ -581,7 +578,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 # However, we will then set all values to unknown.
                 try:
                     raw = await self._async_fetch_from_cache(context)
-                    await self._api.async_fetch_device_statusses(device.serial, raw=raw)
+                    await self._api.async_fetch_device_statusses(device.serial, raw=raw, ret=DabPumpsRet.NONE)
                     ex = None
                 except Exception:
                     # Try next alternative while remembering original exception
@@ -620,7 +617,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Next, try from persisted cache if this is the initial retrieve
             try:
                 raw = await self._async_fetch_from_cache(context)
-                await self._api.async_fetch_strings(self.language, raw=raw)
+                await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
                 ex = None
             except Exception:
                 # Try next alternative while remembering original exception
@@ -779,14 +776,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # Api data
         self._diag_api_data = self._diag_api_data | data
-
-
-    @staticmethod
-    def create_id(*args):
-        str = '_'.join(args).strip('_')
-        str = re.sub(' ', '_', str)
-        str = re.sub('[^a-z0-9_-]+', '', str.lower())
-        return str        
 
 
 class DabPumpsDataError(Exception):
