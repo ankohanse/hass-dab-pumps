@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/ankohanse/hass-dab-pumps/issues",
   "loggers": ["custom_components.dabpumps"],
   "requirements": ["aiodabpumps>=0.1.5"],
-  "version": "2025.01.2"
+  "version": "2025.02.1"
 }
