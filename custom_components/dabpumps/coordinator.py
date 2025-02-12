@@ -280,7 +280,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return (self._api.device_map, self._api.config_map, self._api.status_map)
     
     
-    async def async_modify_data(self, object_id: str, entity_id: str, code: Any|None, value: Any|None):
+    async def async_modify_data(self, object_id: str, entity_id: str, code: str|None = None, value: Any|None = None):
         """
         Set an entity param via the API.
         """
@@ -386,7 +386,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return False
     
         
-    async def _async_change_device_status(self, status: DabPumpsStatus, code: Any|None, value: Any|None):
+    async def _async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
         error = None
         ts_start = datetime.now()
 
