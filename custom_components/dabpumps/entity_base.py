@@ -129,12 +129,12 @@ class DabPumpsEntityHelper:
         
         other_platforms = [p for p in PLATFORMS if p != target_platform]
         
-        _LOGGER.debug(f"Create entities for installation '{self.install_name}' ({self.install_id})")
+        _LOGGER.debug(f"Create {target_platform} entities for installation '{self.install_name}' ({self.install_id})")
 
         # Iterate all statusses to create sensor entities
         entities = []
         for object_id, status in status_map.items():
-            
+
             # skip statusses that are not associated with a device in this installation
             device = device_map.get(status.serial, None)
             if not device or device.install_id != self.install_id:
@@ -145,17 +145,16 @@ class DabPumpsEntityHelper:
                 continue
             
             if not config.meta_params or status.key not in config.meta_params:
-                _LOGGER.warning(f"Device metadata holds no info to create a sensor for '{status.key}' with value '{status.val}'.")
+                _LOGGER.warning(f"Device metadata holds no info to create a sensor for '{status.key}' with value '{status.value}'.")
                 continue
             
             params = config.meta_params[status.key]
-            
+
             if not self._is_entity_whitelisted(params):
                 # Some statusses (error1...error64) are deliberately skipped
                 continue
             
             platform = self._get_entity_platform(params)
-            
             if platform != target_platform:
                 # This status will be handled via another platform
                 continue
@@ -333,7 +332,7 @@ class DabPumpsEntity(Entity):
             case 'None' | None: return None
             
             case _:
-                _LOGGER.warn(f"DAB Pumps encountered a unit or measurement '{self._params.unit}' for '{self._params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
+                _LOGGER.warning(f"DAB Pumps encountered a unit or measurement '{self._params.unit}' for '{self._params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
                 return self._params.unit
     
     

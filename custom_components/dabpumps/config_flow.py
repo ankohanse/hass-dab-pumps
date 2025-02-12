@@ -22,6 +22,13 @@ from homeassistant.const import (
     CONF_LANGUAGE,
 )
 
+from aiodabpumps import (
+    DabPumpsApi,
+    DabPumpsApiError,
+    DabPumpsApiAuthError,
+) 
+
+
 from .const import (
     DOMAIN,
     DEFAULT_USERNAME,
@@ -42,9 +49,6 @@ from .const import (
 
 from .api import (
     DabPumpsApiFactory,
-    DabPumpsApi,
-    DabPumpsApiError,
-    DabPumpsApiAuthError,
 )
 
 from .coordinator import (

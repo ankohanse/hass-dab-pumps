@@ -65,6 +65,13 @@ def _clear_hass_data(hass):
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up DAB Pumps from a config entry."""
     
+    # Assign the HA configured log level of this module to the aiodabpumps module
+    log_level: int = _LOGGER.getEffectiveLevel()
+    lib_logger: logging.Logger = logging.getLogger("aiodabpumps")
+    lib_logger.setLevel(log_level)
+
+    _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")
+
     # Get properties from the config_entry
     username = config_entry.data[CONF_USERNAME]
     password = config_entry.data[CONF_PASSWORD]

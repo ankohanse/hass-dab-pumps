@@ -32,6 +32,15 @@ from datetime import datetime
 from collections import defaultdict
 from collections import namedtuple
 
+from aiodabpumps import (
+    DabPumpsDevice,
+    DabPumpsParams,
+    DabPumpsStatus
+)
+
+from .coordinator import (
+    DabPumpsCoordinator,
+)
 
 from .const import (
     DOMAIN,
@@ -70,14 +79,23 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
-        """ Initialize the sensor. """
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+        """ 
+        Initialize the sensor. 
+        """
+
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, params)
         
-        # The unique identifier for this sensor within Home Assistant
-        self.object_id = object_id
-        self.entity_id = ENTITY_ID_FORMAT.format(status.unique_id)
+        # Sanity check
+        if params.type != 'enum':
+            _LOGGER.error(f"Unexpected parameter type ({params.type}) for a select entity")
+
+        # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
+        self.object_id = object_id                          # Device.serial + status.key
+        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
 
         self._coordinator = coordinator
@@ -86,8 +104,24 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         self._key = params.key
         self._dict = { k: self._get_string(v) for k,v in params.values.items() }
 
-        # Create all attributes
-        self._update_attributes(status, True)
+        # update creation-time only attributes
+        _LOGGER.debug(f"Create entity '{self.entity_id}'")
+        
+        self._attr_unique_id = unique_id
+
+        self._attr_has_entity_name = True
+        self._attr_name = self._get_string(status.key)
+        self._name = status.key
+        
+        self._attr_entity_category = self.get_entity_category()
+        self._attr_device_class = SwitchDeviceClass.SWITCH
+
+        self._attr_device_info = DeviceInfo(
+            identifiers = {(DOMAIN, self._device.serial)},
+        )
+        
+        # Create all value related attributes
+        self._update_attributes(status, force=True)
     
     
     @property
@@ -112,72 +146,62 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
+        if not status:
+            return
 
         # Update any attributes
-        if status:
-            if self._update_attributes(status, False):
-                self.async_write_ha_state()
+        if self._update_attributes(status):
+            self.async_write_ha_state()
     
     
-    def _update_attributes(self, status, is_create):
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
+        """
+        Set entity value, unit and icon
+        """
         
-        if self._params.type != 'enum':
-            _LOGGER.error(f"Unexpected parameter type ({self._params.type}) for a select entity")
-
-        # Process any changes
-        changed = False
-        val = self._params.values.get(status.val, status.val)
-        if val in SWITCH_VALUES_ON:
+        # Use original status.code, not translated status.value to compare
+        if status.code in SWITCH_VALUES_ON:
             attr_is_on = True
             attr_state = STATE_ON
             
-        elif val in SWITCH_VALUES_OFF:
+        elif status.code in SWITCH_VALUES_OFF:
             attr_is_on = False
             attr_state = STATE_OFF
+
         else:
             attr_is_on = None
             attr_state = None
         
-        # update creation-time only attributes
-        if is_create:
-            _LOGGER.debug(f"Create switch entity '{status.key}' ({status.unique_id})")
-            
-            self._attr_unique_id = status.unique_id
-
-            self._attr_has_entity_name = True
-            self._attr_name = self._get_string(status.key)
-            self._name = status.key
-            
-            self._attr_entity_category = self.get_entity_category()
-            self._attr_device_class = SwitchDeviceClass.SWITCH
-
-            self._attr_device_info = DeviceInfo(
-               identifiers = {(DOMAIN, self._device.serial)},
-            )
-            changed = True
-        
         # update value if it has changed
-        if is_create or self._attr_is_on != attr_is_on:
+        if self._attr_is_on != attr_is_on or force:
+
             self._attr_is_on = attr_is_on
             self._attr_state = attr_state
             self._attr_unit_of_measurement = self.get_unit()
             
             self._attr_icon = self.get_icon()
-            changed = True
             
-        return changed
+            return True
+            
+        # No changes
+        return False
     
     
     async def async_turn_on(self, **kwargs) -> None:
-        """Turn the entity on."""
-        data_val = next((k for k,v in self._dict.items() if k in SWITCH_VALUES_ON or v in SWITCH_VALUES_ON), None)
-        if data_val:
-            _LOGGER.info(f"Set {self.entity_id} to ON ({data_val})")
-            
-            success = await self._coordinator.async_modify_data(self.object_id, data_val)
+        """
+        Turn the entity on.
+        """
+
+        # Pass the status.code and not the translated status.value
+        code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_ON or value in SWITCH_VALUES_ON), None)
+        if code:
+            # AJH
+            _LOGGER.debug(f"async_turn_on: code={code} ({type(code)})")
+
+            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_is_on = True
                 self._attr_state = STATE_ON
@@ -185,12 +209,17 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     
     
     async def async_turn_off(self, **kwargs) -> None:
-        """Turn the entity off."""
-        data_val = next((k for k,v in self._dict.items() if k in SWITCH_VALUES_OFF or v in SWITCH_VALUES_OFF), None)
-        if data_val:
-            _LOGGER.info(f"Set {self.entity_id} to OFF ({data_val})")
-            
-            success = await self._coordinator.async_modify_data(self.object_id, data_val)
+        """
+        Turn the entity off.
+        """
+
+        # Pass the status.code and not the translated status.value
+        code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_OFF or value in SWITCH_VALUES_OFF), None)
+        if code:
+            # AJH
+            _LOGGER.debug(f"async_turn_off: code={code} ({type(code)})")
+
+            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_is_on = False
                 self._attr_state = STATE_OFF

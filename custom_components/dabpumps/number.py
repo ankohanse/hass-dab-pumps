@@ -27,6 +27,11 @@ from datetime import datetime
 from collections import defaultdict
 from collections import namedtuple
 
+from aiodabpumps import (
+    DabPumpsDevice,
+    DabPumpsParams,
+    DabPumpsStatus
+)
 
 from .const import (
     DOMAIN,
@@ -34,6 +39,10 @@ from .const import (
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
+)
+
+from .coordinator import (
+    DabPumpsCoordinator,
 )
 
 from .entity_base import (
@@ -63,22 +72,65 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
-        """ Initialize the sensor. """
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+        """ 
+        Initialize the sensor. 
+        """
+
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, params)
         
-        # The unique identifier for this sensor within Home Assistant
-        self.object_id = object_id
-        self.entity_id = ENTITY_ID_FORMAT.format(status.unique_id)
+        # Sanity check
+        if params.type != 'measure':
+            _LOGGER.error(f"Unexpected parameter type ({params.type}) for a number entity")
+
+        # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
+        self.object_id = object_id                          # Device.serial + status.key
+        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
         
         self._coordinator = coordinator
         self._device = device
         self._params = params
 
-        # Create all attributes
-        self._update_attributes(status, True)
+        # Prepare attributes
+        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
+            # Convert to float
+            attr_min = float(self._params.min) if self._params.min is not None else None
+            attr_max = float(self._params.max) if self._params.max is not None else None
+            attr_step = self._params.weight
+        else:
+            # Convert to int
+            attr_min = int(self._params.min) if self._params.min is not None else None
+            attr_max = int(self._params.max) if self._params.max is not None else None
+            attr_step = self.get_number_step()
+        
+        # update creation-time only attributes
+        _LOGGER.debug(f"Create entity '{self.entity_id}'")
+        
+        self._attr_unique_id = unique_id
+        
+        self._attr_has_entity_name = True
+        self._attr_name = self._get_string(status.key)
+        self._name = status.key
+        
+        self._attr_mode = NumberMode.BOX
+        self._attr_device_class = self.get_number_device_class()
+        self._attr_entity_category = self.get_entity_category()
+        if attr_min:
+            self._attr_native_min_value = attr_min
+        if attr_max:
+            self._attr_native_max_value = attr_max
+        self._attr_native_step = attr_step
+        
+        self._attr_device_info = DeviceInfo(
+            identifiers = {(DOMAIN, self._device.serial)},
+        )
+
+        # Create all value related attributes
+        self._update_attributes(status, force=True)
     
     
     @property
@@ -101,89 +153,49 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
+        """
+        Handle updated data from the coordinator.
+        """
 
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this entity
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
+        if not status:
+            return
 
         # Update any attributes
-        if status:
-            if self._update_attributes(status, False):
-                self.async_write_ha_state()
+        if self._update_attributes(status):
+            self.async_write_ha_state()
     
     
-    def _update_attributes(self, status, is_create):
-        
-        if self._params.type != 'measure':
-            _LOGGER.error(f"Unexpected parameter type ({self._params.type}) for a number entity")
+    def _update_attributes(self, status: DabPumpsStatus, force: bool = False):
+        """
+        Set entity value, unit and icon
+        """
 
-        # Process any changes
-        changed = False
-        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
-            # Convert to float
-            attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
-            attr_min = float(self._params.min) if self._params.min is not None else None
-            attr_max = float(self._params.max) if self._params.max is not None else None
-            attr_val = round(float(status.val) * self._params.weight, attr_precision) if status.val is not None else None
-            attr_step = self._params.weight
-        else:
-            # Convert to int
-            attr_precision = 0
-            attr_min = int(self._params.min) if self._params.min is not None else None
-            attr_max = int(self._params.max) if self._params.max is not None else None
-            attr_val = int(status.val) if status.val is not None else None
-            attr_step = self.get_number_step()
-        
-        # update creation-time only attributes
-        if is_create:
-            _LOGGER.debug(f"Create number entity '{status.key}' ({status.unique_id})")
-            
-            self._attr_unique_id = status.unique_id
-            
-            self._attr_has_entity_name = True
-            self._attr_name = self._get_string(status.key)
-            self._name = status.key
-            
-            self._attr_mode = NumberMode.BOX
-            self._attr_device_class = self.get_number_device_class()
-            self._attr_entity_category = self.get_entity_category()
-            if attr_min:
-                self._attr_native_min_value = attr_min
-            if attr_max:
-                self._attr_native_max_value = attr_max
-            self._attr_native_step = attr_step
-            
-            self._attr_device_info = DeviceInfo(
-               identifiers = {(DOMAIN, self._device.serial)},
-            )
-            changed = True
-        
         # update value if it has changed
-        if is_create or self._attr_native_value != attr_val:
-            self._attr_native_value = attr_val
+        if self._attr_native_value != status.value or force:
+
+            self._attr_native_value = status.value
             self._attr_native_unit_of_measurement = self.get_unit()
             
             self._attr_icon = self.get_icon()
-            changed = True
+
+            return True
         
-        return changed
+        # No changes
+        return False
     
     
     async def async_set_native_value(self, value: float) -> None:
-        """Change the selected option"""
+        """
+        Change the selected value
+        """
         
-        if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
-            # Convert from float to int
-            data_val = int(round(value / self._params.weight))
-        else:
-            # Convert to int
-            data_val = int(value)
-            value = int(value)
-            
-        _LOGGER.debug(f"Set {self.entity_id} to {value} ({data_val})")
-        
-        success = await self._coordinator.async_modify_data(self.object_id, data_val)
+        # AJH
+        _LOGGER.debug(f"async_set_native_value: value={value} ({type(value)})")
+
+        success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, value=value)
         if success:
             self._attr_native_value = value
             self.async_write_ha_state()

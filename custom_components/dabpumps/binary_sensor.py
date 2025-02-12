@@ -33,6 +33,11 @@ from datetime import datetime
 from collections import defaultdict
 from collections import namedtuple
 
+from aiodabpumps import (
+    DabPumpsDevice,
+    DabPumpsParams,
+    DabPumpsStatus
+)
 
 from .const import (
     DOMAIN,
@@ -43,6 +48,10 @@ from .const import (
     BINARY_SENSOR_VALUES_ON,
     BINARY_SENSOR_VALUES_OFF,
     BINARY_SENSOR_VALUES_ALL,
+)
+
+from .coordinator import (
+    DabPumpsCoordinator,
 )
 
 from .entity_base import (
@@ -77,22 +86,49 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
     Could be a sensor that is part of a pump like ESybox, Esybox.mini
     Or could be part of a communication module like DConnect Box/Box2
     """
-    def __init__(self, coordinator, install_id, object_id, device, params, status) -> None:
-        """ Initialize the sensor. """
+    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+        """ 
+        Initialize the sensor. 
+        """
+
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, params)
         
-        # The unique identifier for this sensor within Home Assistant
-        self.object_id = object_id
-        self.entity_id = ENTITY_ID_FORMAT.format(status.unique_id)
+        # Sanity check
+        if params.type != 'enum':
+            _LOGGER.error(f"Unexpected parameter type ({self._params.type}) for a binary sensor")
+            
+        if len(params.values or []) != 2:
+            _LOGGER.error(f"Unexpected parameter values ({self._params.values}) for a binary sensor")
+            
+        # The unique identifiers for this sensor within Home Assistant
+        unique_id = self.coordinator.create_id(device.name, status.key)
+        
+        self.object_id = object_id                          # Device.serial + status.key
+        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
         self.install_id = install_id
         
         self._coordinator = coordinator
         self._device = device
         self._params = params
         
-        # Create all attributes
-        self._update_attributes(status, True)
+        # update creation-time only attributes
+        _LOGGER.debug(f"Create entity '{self.entity_id}'")
+        
+        self._attr_unique_id = unique_id
+        
+        self._attr_has_entity_name = True
+        self._attr_name = self._get_string(status.key)
+        self._name = status.key
+        
+        self._attr_device_class = self._get_device_class()
+
+        self._attr_device_info = DeviceInfo(
+            identifiers = {(DOMAIN, self._device.serial)},
+        )
+
+        # Create all value related attributes
+        self._update_attributes(status, force=True)
     
     
     @property
@@ -115,64 +151,42 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
     
     @callback
     def _handle_coordinator_update(self) -> None:
-        """Handle updated data from the coordinator."""
+        """
+        Handle updated data from the coordinator.
+        """
 
-        # find the correct device and status corresponding to this sensor
+        # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
         status = status_map.get(self.object_id)
+        if not status:
+            return
 
         # Update any attributes
-        if status:
-            if self._update_attributes(status, False):
-                self.async_write_ha_state()
+        if self._update_attributes(status):
+            self.async_write_ha_state()
     
     
-    def _update_attributes(self, status, is_create):
-        
-        # Sanity check
-        if self._params.type != 'enum':
-            _LOGGER.error(f"Unexpected parameter type ({self._params.type}) for a binary sensor")
-            
-        if len(self._params.values or []) != 2:
-            _LOGGER.error(f"Unexpected parameter values ({self._params.values}) for a binary sensor")
-            
-        # Lookup the dict string for the value and otherwise return the value itself
-        val = self._params.values.get(status.val, status.val)
-        if val in BINARY_SENSOR_VALUES_ON:
+    def _update_attributes(self, status: DabPumpsStatus, force: bool = False):
+        """
+        Set entity value, unit and icon
+        """
+
+        # Use original status.code, not translated status.value to compare
+        if status.code in BINARY_SENSOR_VALUES_ON:
             is_on = True
-        elif val in BINARY_SENSOR_VALUES_OFF:
+        elif status.code in BINARY_SENSOR_VALUES_OFF:
             is_on = False
         else:
             is_on = None
             
-        # Process any changes
-        changed = False
-        
-        # update creation-time only attributes
-        if is_create:
-            _LOGGER.debug(f"Create binary_sensor '{status.key}' ({status.unique_id})")
-            
-            self._attr_unique_id = status.unique_id
-            
-            self._attr_has_entity_name = True
-            self._attr_name = self._get_string(status.key)
-            self._name = status.key
-            
-            self._attr_device_class = self._get_device_class()
-
-            self._attr_device_info = DeviceInfo(
-               identifiers = {(DOMAIN, self._device.serial)},
-            )
-            changed = True
-        
         # update value if it has changed
-        if is_create \
-        or (self._attr_is_on != is_on):
+        if (self._attr_is_on != is_on) or force:
             
             self._attr_is_on = is_on
-            changed = True
-            
-        return changed
+            return True
+        
+        # No changes
+        return False
     
     
     def _get_device_class(self):
