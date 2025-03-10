@@ -9,6 +9,6 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ankohanse/hass-dab-pumps/issues",
   "loggers": ["custom_components.dabpumps"],
-  "requirements": ["aiodabpumps>=0.1.5"],
-  "version": "2025.02.1"
+  "requirements": ["aiodabpumps>=0.1.6"],
+  "version": "2025.03.1"
 }
