@@ -76,6 +76,7 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
     │   ├── __init__.py
     │   ├── api.py
     │   ├── binary_sensor.py
+    │   ├── button.py
     │   ├── config_flow.py
     │   ├── const.py
     │   ├── coordinator.py

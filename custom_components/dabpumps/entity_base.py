@@ -1,35 +1,4 @@
 import logging
-
-from homeassistant.components.number import NumberDeviceClass
-from homeassistant.components.sensor import SensorDeviceClass
-from homeassistant.components.sensor import SensorStateClass
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
-from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
-
-
-from .const import (
-    DOMAIN,
-    PLATFORMS,
-    NAME,
-    HELPER,
-    CONF_INSTALL_ID,
-    CONF_INSTALL_NAME,
-    CONF_OPTIONS,
-    BINARY_SENSOR_VALUES_ON,
-    BINARY_SENSOR_VALUES_OFF,
-    BINARY_SENSOR_VALUES_ALL,
-    SWITCH_VALUES_ON,
-    SWITCH_VALUES_OFF,
-    SWITCH_VALUES_ALL,
-)
-
-
-_LOGGER = logging.getLogger(__name__)
-
-
-import logging
 import async_timeout
 
 from datetime import timedelta
@@ -52,17 +21,15 @@ import homeassistant.helpers.entity_registry as entity_registry
 
 from .const import (
     DOMAIN,
+    PLATFORMS,
     NAME,
     HELPER,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
-    BINARY_SENSOR_VALUES_ON,
-    BINARY_SENSOR_VALUES_OFF,
     BINARY_SENSOR_VALUES_ALL,
-    SWITCH_VALUES_ON,
-    SWITCH_VALUES_OFF,
     SWITCH_VALUES_ALL,
+    BUTTON_VALUES_ALL,
 )
 
 from .coordinator import (
@@ -191,19 +158,26 @@ class DabPumpsEntityHelper:
         
         # Whitelisted keys that would otherwise be excluded by blacklisted groups below:
         keys_whitelist = [
-            'RamUsed',      # group: Debug
-            'RamUsedMax',   # group: Debug
-            'PumpDisable',  # group: System Management
-            'LatestError'   # group: Errors
+            'RamUsed',                  # group: Debug
+            'RamUsedMax',               # group: Debug
+            'LatestError',              # group: Errors
+            'RF_EraseHistoricalFault',  # group: Errors
         ]
 
         # Blacklisted keys that would otherwise be included by whitelisted groups below:
-        keys_blacklist = []
+        keys_blacklist = [
+            'IdentifyDevice',           # group: System Management
+            'Identify',                 # group: Advanced
+            'Reboot',                   # group: Advanced
+            'UpdateSystem',             # group: Advanced
+            'UpdateFirmware',           # group: Firmware Updates
+            'UpdateProgress',           # group: Firmware Updates
+            'PW_ModifyPassword',        # group: Technical Assistance
+        ]
         
         groups_whitelist = []
         groups_blacklist = [
             'Debug',
-            'System Management',
             'ModbusDevice',
             'Errors'
         ]
@@ -217,7 +191,6 @@ class DabPumpsEntityHelper:
             return True
         
         if params.key in keys_blacklist:
-            #_LOGGER.debug(f"Skip create sensor for '{params.key}'; it is blacklisted'.")
             return False
         
         # Then check groups
@@ -225,7 +198,6 @@ class DabPumpsEntityHelper:
             return True
 
         if params.group in groups_blacklist:
-            #_LOGGER.debug(f"Skip create sensor for '{params.key}'; its group '{params.group}' is blacklisted'.")
             return False
         
         # If not blacklisted by any rule above, then it is whitelisted
@@ -237,16 +209,18 @@ class DabPumpsEntityHelper:
         Determine what platform an entry should be added into
         """
         
-        # Is it a switch/select/number config or control entity? 
-        # Needs to have change rights the user role
+        # Is it a button/switch/select/number config or control entity? 
+        # Needs to have change rights for the user role
         # And needs to be in group 'Extra Comfort' or be a specific key
         # that would otherwise be excluded as group
         keys_config = [
             'PumpDisable',
+            'RF_EraseHistoricalFault',
         ]
         groups_config = [
             'Extra Comfort',
             'Setpoint',
+            'System Management',
         ]
         is_config = False
         if self.coordinator.user_role in params.change:
@@ -257,6 +231,11 @@ class DabPumpsEntityHelper:
         
         if is_config:
             if params.type == 'enum':
+                # With exactly 1 possible value that are of 'press' type it becomes a button
+                if len(params.values or []) == 1:
+                    if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
+                        return Platform.BUTTON
+
                 # With exactly 2 possible values that are of ON/OFF type it becomes a switch
                 if len(params.values or []) == 2:
                     if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
@@ -269,11 +248,18 @@ class DabPumpsEntityHelper:
             elif params.type == 'measure':
                 return Platform.NUMBER
         
-        # Is it a binary sensor?
-        if params.type == 'enum' and len(params.values or []) == 2:
-            if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
-                return Platform.BINARY_SENSOR
-        
+        # Only view rights or does not fit in one of the modifyable entities
+        if params.type == 'enum':
+            # Suppress buttons if we only have view rights
+            if len(params.values or []) == 1:
+                if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
+                    return None
+    
+            # Is it a binary sensor?
+            if len(params.values or []) == 2:
+                if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
+                    return Platform.BINARY_SENSOR
+    
         # Everything else will become a regular sensor
         return Platform.SENSOR
     
@@ -524,10 +510,16 @@ class DabPumpsEntity(Entity):
         # Leads to the entities being added under 'Configuration'
         # Typically intended for restart or update functionality
         groups_config = [
-            'System Management',
             'Setpoint'
         ]
         if self._params.group in groups_config and 'I' in self._params.change:
+            return EntityCategory.CONFIG
+
+        # Return CONFIG for some specific entries associated with others that are CONFIG
+        keys_config = [
+            'PumpDisable',
+        ]
+        if self._params.key in keys_config and 'I' in self._params.change:
             return EntityCategory.CONFIG
             
         # Return DIAGNOSTIC for params in groups associated with diagnostics

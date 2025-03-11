@@ -19,6 +19,7 @@ ISSUE_URL = "https://github.com/ankohanse/hass-dab-pumps/issues"
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.NUMBER,
     Platform.SELECT,
     Platform.SWITCH,
@@ -87,6 +88,8 @@ BINARY_SENSOR_VALUES_ALL = BINARY_SENSOR_VALUES_ON + BINARY_SENSOR_VALUES_OFF
 SWITCH_VALUES_ON = ['1', 'Enable']
 SWITCH_VALUES_OFF = ['0', 'Disable']
 SWITCH_VALUES_ALL = SWITCH_VALUES_ON + SWITCH_VALUES_OFF
+
+BUTTON_VALUES_ALL = ['1']
 
 COORDINATOR_RETRY_ATTEMPTS = 10
 COORDINATOR_RETRY_DELAY = 5    # seconds
