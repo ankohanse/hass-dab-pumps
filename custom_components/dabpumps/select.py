@@ -180,9 +180,6 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
         # Pass the status.code and not the translated status.value
         code = next((code for code,value in self._dict.items() if value == option), None)
         if code is not None:
-             # AJH
-            _LOGGER.debug(f"async_select_option: code={code} ({type(code)})")
-
             success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_current_option = option

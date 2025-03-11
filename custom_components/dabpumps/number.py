@@ -192,9 +192,6 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         Change the selected value
         """
         
-        # AJH
-        _LOGGER.debug(f"async_set_native_value: value={value} ({type(value)})")
-
         success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, value=value)
         if success:
             self._attr_native_value = value

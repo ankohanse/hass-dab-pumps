@@ -198,9 +198,6 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         # Pass the status.code and not the translated status.value
         code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_ON or value in SWITCH_VALUES_ON), None)
         if code:
-            # AJH
-            _LOGGER.debug(f"async_turn_on: code={code} ({type(code)})")
-
             success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_is_on = True
@@ -216,9 +213,6 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         # Pass the status.code and not the translated status.value
         code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_OFF or value in SWITCH_VALUES_OFF), None)
         if code:
-            # AJH
-            _LOGGER.debug(f"async_turn_off: code={code} ({type(code)})")
-
             success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self._attr_is_on = False

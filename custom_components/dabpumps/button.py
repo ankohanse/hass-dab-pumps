@@ -78,9 +78,6 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, params)
 
-        #AJH
-        _LOGGER.debug(f"button init for {object_id}")
-        
         # Sanity check
         if params.type != 'enum':
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a button entity")
@@ -171,9 +168,6 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         # Pass the status.code and not the translated status.value
         code = next((code for code,value in self._dict.items()), None)
         if code:
-            # AJH
-            _LOGGER.debug(f"async_press: code={code} ({type(code)})")
-
             success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
             if success:
                 self.async_write_ha_state()
