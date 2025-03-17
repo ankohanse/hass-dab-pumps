@@ -6,7 +6,8 @@ import re
 
 from collections import namedtuple
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from enum import Enum
+from typing import Any, Final
 
 from homeassistant.components.diagnostics import REDACTED
 from homeassistant.components.diagnostics.util import async_redact_data
@@ -80,6 +81,23 @@ _LOGGER = logging.getLogger(__name__)
 
 
 
+# Define fetch orders:
+# - On first fetch, we try to fetch old data from cache (faster) and fallback to fetch new data from web (slower)
+# - On next fetches, we try to fetch new data from web (slower) and fallback to fetch old data from cache
+#
+# This allows for a faster startup of the integration
+#
+
+class DabPumpsCoordinatorFetch(Enum):
+    WEB = 0
+    CACHE = 1
+
+class DabPumpsCoordinatorFetchOrder():
+    CONFIG: Final = (DabPumpsCoordinatorFetch.WEB) 
+    INIT: Final = (DabPumpsCoordinatorFetch.CACHE, DabPumpsCoordinatorFetch.WEB)
+    NEXT: Final = (DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.CACHE)
+
+
 class DabPumpsCoordinatorFactory:
     
     @staticmethod
@@ -133,9 +151,11 @@ class DabPumpsCoordinatorFactory:
 
 class DabPumpsCoordinator(DataUpdateCoordinator):
     """My custom coordinator."""
-    
+
     def __init__(self, hass: HomeAssistant, api: DabPumpsApi, install_id: str, options: dict):
-        """Initialize my coordinator."""
+        """
+        Initialize my coordinator.
+        """
         super().__init__(
             hass,
             _LOGGER,
@@ -149,6 +169,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._api: DabPumpsApi = api
         self._install_id: str = install_id
         self._options: dict = options
+
+        self._fetch_order = DabPumpsCoordinatorFetchOrder.INIT
 
         # counters for diagnostics
         self._diag_retries: dict[int, int] = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
@@ -164,9 +186,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._hass: HomeAssistant = hass
         self._store_key: str = install_id
         self._store: DabPumpsCoordinatorStore = DabPumpsCoordinatorStore(hass, self._store_key)
-        self._cache: dict = None
-        self._cache_last_write: datetime = datetime.min
-
+        self._cache: DabPumpsCoordinatorCache = DabPumpsCoordinatorCache(self._store)
+        
 
     @property
     def string_map(self) -> dict[str, str]:
@@ -206,6 +227,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Fetch installation data from API.
         """
         _LOGGER.debug(f"Config flow data")
+        self._fetch_order = DabPumpsCoordinatorFetchOrder.CONFIG
+
         await self._async_detect_install_list()
         
         #_LOGGER.debug(f"install_map: {self._api.install_map}")
@@ -249,31 +272,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"Update data")
 
         # Make sure our cache is available
-        if self._cache is None:
-            if self._store:
-                _LOGGER.debug(f"Read persisted cache")
-                store = await self._store.async_get_data() or {}
-                self._cache = store.get("cache", {})
-            else:
-                self._cache = {}
+        await self._cache.async_read()
 
+        # Fetch the actual data
         # Note: asyncio.TimeoutError and aiohttp.ClientError are already
         # handled by the data update coordinator.
         await self._async_detect_data()
 
-        # Periodically persist the cache
-        if self._hass and \
-           self._store and \
-           self._cache and \
-           (datetime.now() - self._cache_last_write).total_seconds() > COORDINATOR_CACHE_WRITE_PERIOD:
-            
-            _LOGGER.debug(f"Persist cache")
-            self._cache_last_write = datetime.now()
+        # If this was the first fetch, then make sure all next ones use the correct fetch order (web or cache)
+        self._fetch_order = DabPumpsCoordinatorFetchOrder.NEXT
 
-            store = await self._store.async_get_data() or {}
-            store["cache"] = self._cache
-            await self._store.async_set_data(store)
-        
+        # Periodically persist the cache
+        await self._cache._async_write()
+
         #_LOGGER.debug(f"device_map: {self._api.device_map}")
         #_LOGGER.debug(f"config_map: {self._api.config_map}")
         #_LOGGER.debug(f"status_map: {self._api.status_map}")
@@ -291,7 +302,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # update the remote value
         return await self._async_change_device_status(status, code=code, value=value)
-   
+
     
     async def _async_detect_install_list(self):
         error = None
@@ -299,8 +310,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
-                await self._api.async_login()
-                    
                 # Fetch the list of installations
                 await self._async_detect_installations()
                 
@@ -336,30 +345,20 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
-                try:
-                    await self._api.async_login()
-                except:
-                    if len(self._api.device_map) > 0:
-                        # Force retry in loop by raising original exception
-                        raise
-                    else:
-                        # Ignore and use persisted cached data if this is the initial retrieve
-                        pass
-
                 # Once a day, attempt to refresh
                 # - list of translations
-                # - list of installations (just for diagnostocs)
+                # - list of installations (just for diagnostics)
                 # - installation details and devices
                 # - additional device details
                 # - device configurations
                 await self._async_detect_strings()
                 await self._async_detect_installations(ignore_exception=True)
                 await self._async_detect_install_details()
-                await self._async_detect_device_details()
-                await self._async_detect_device_configs()
+                await self._async_detect_devices_details()
+                await self._async_detect_devices_configs()
 
                 # Always fetch device statusses
-                await self._async_detect_device_statusses()
+                await self._async_detect_devices_statusses()
 
                 # Keep track of how many retries were needed and duration
                 self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
@@ -392,9 +391,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
             try:
-                await self._api.async_login()
-                
                 # Attempt to change the device status via the API
+                await self._api.async_login()
                 await self._api.async_change_device_status(status.serial, status.key, code=code, value=value)
 
                 # Keep track of how many retries were needed and duration
@@ -430,39 +428,41 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
         
-        # Try to retrieve via API
         context = f"installation {self._install_id}"
-        try:
-            raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
 
-            # Result is in self._api.device_map.
-            # We also cache the raw data so we have something to fall back on in case of http errors
-            await self._async_update_cache(context, raw)
-            ex = None
-        except Exception as e:
-            if len(self._api.device_map) > 0:
-                # Ignore problems if this is just a periodic refresh
-                ex = None
-            else:
-                # Try next alternative while remembering original exception
-                ex = e
-
-        if ex:
-            # Next, try from persisted cache
+        for fetch_method in self._fetch_order:
             try:
-                raw = await self._async_fetch_from_cache(context)
-                await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
-                ex = None
-            except Exception:
-                # Try next alternative while remembering original exception
-                pass
+                match fetch_method:
+                    case DabPumpsCoordinatorFetch.WEB:
+                        await self._api.async_login()
+
+                        raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
+                        self._cache[context] = raw
+
+                    case DabPumpsCoordinatorFetch.CACHE:
+                        raw = self._cache[context]
+                        await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
+                
+                # If no exception was thrown, then the fetch method succeeded.
+                # Result is in self._api.device_map.
+                return
+
+            except Exception as e:
+                if len(self._api.device_map) > 0:
+                    # Ignore problems if this is just a periodic refresh
+                    return
+                else:
+                    # Try next fetch_method while remembering original exception
+                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
+                        ex = e
 
         if ex:
+            # All fetch methods failed.
             # Force retry in calling function by raising original exception
-            raise ex
+            raise ex from None
 
 
-    async def _async_detect_device_details(self):
+    async def _async_detect_devices_details(self):
         """
         Attempt to refresh device details (once a day)
         """
@@ -471,40 +471,48 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         for device in self._api.device_map.values():
+            await self._async_detect_device_details(device.serial)
 
-            # First try to retrieve from API
-            context = f"device {device.serial}"
+
+    async def _async_detect_device_details(self, device_serial: str):
+        """
+        Attempt to refresh device details for a specific device
+        """
+        context = f"device {device_serial}"
+
+        for fetch_method in self._fetch_order:
             try:
-                raw = await self._api.async_fetch_device_details(device.serial, ret=DabPumpsRet.RAW)
+                match fetch_method:
+                    case DabPumpsCoordinatorFetch.WEB:
+                        await self._api.async_login()
 
+                        raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
+                        self._cache[context] = raw
+
+                    case DabPumpsCoordinatorFetch.CACHE:
+                        raw = self._cache[context]
+                        await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
+                
+                # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.device_map.
-                # We also cache the raw data so we have something to fall back on in case of http errors
-                await self._async_update_cache(context, raw)
-                ex = None
+                return
+
             except Exception as e:
-                if device.serial in self._api.device_map:
-                    # Ignore problems if this is just a refresh
-                    ex = None
+                if device_serial in self._api.device_map:
+                    # Ignore problems if this is just a periodic refresh
+                    return
                 else:
-                    # Try next alternative while remembering original exception
-                    ex = e
+                    # Try next fetch_method while remembering original exception
+                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
+                        ex = e
 
-            if ex:
-                # Next try from persisted cache if this is the initial retrieve
-                try:
-                    raw = await self._async_fetch_from_cache(context)
-                    await self._api.async_fetch_device_details(device.serial, raw=raw, ret=DabPumpsRet.NONE)
-                    ex = None
-                except Exception:
-                    # Try next alternative while remembering original exception
-                    pass
-
-            if ex:
-                # Force retry in calling function by raising original exception
-                raise ex
+        if ex:
+            # All fetch methods failed.
+            # Force retry in calling function by raising original exception
+            raise ex from None
 
 
-    async def _async_detect_device_configs(self):
+    async def _async_detect_devices_configs(self):
         """
         Attempt to refresh device configurations (once a day)
         """
@@ -512,41 +520,52 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
         
-        for device in self._api.device_map.values():
+        # Compose set of config_id's (duplicates automatically removed)
+        config_ids = { device.config_id for device in self._api.device_map.values() }
 
-            # First try to retrieve from API
-            context = f"configuration {device.config_id}"
+        for config_id in config_ids:
+            await self._async_detect_device_configs(config_id)
+
+    
+    async def _async_detect_device_configs(self, config_id: str):
+        """
+        Attempt to refresh device configurations for a specific config id
+        """
+        context = f"configuration {config_id}"
+
+        for fetch_method in self._fetch_order:
             try:
-                raw = await self._api.async_fetch_device_config(device.config_id, ret=DabPumpsRet.RAW)
+                match fetch_method:
+                    case DabPumpsCoordinatorFetch.WEB:
+                        await self._api.async_login()
 
+                        raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
+                        self._cache[context] = raw
+
+                    case DabPumpsCoordinatorFetch.CACHE:
+                        raw = self._cache[context]
+                        await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
+                
+                # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.config_map.
-                # We also cache the raw data so we have something to fall back on in case of http errors
-                await self._async_update_cache(context, raw)
-                ex = None
+                return
+
             except Exception as e:
-                if device.config_id in self._api.config_map:
-                    # Ignore problems if this is just a refresh
-                    ex = None
+                if config_id in self._api.config_map:
+                    # Ignore problems if this is just a periodic refresh
+                    return
                 else:
-                    # Try next alternative while remembering original exception
-                    ex = e
+                    # Try next fetch_method while remembering original exception
+                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
+                        ex = e
 
-            if ex:
-                # Next try from persisted cache if this is the initial retrieve
-                try:
-                    raw = await self._async_fetch_from_cache(context)
-                    await self._api.async_fetch_device_config(device.config_id, raw=raw, ret=DabPumpsRet.NONE)
-                    ex = None
-                except Exception:
-                    # Try next alternative while remembering original exception
-                    pass
-
-            if ex:
-                # Force retry in calling function by raising original exception
-                raise ex
+        if ex:
+            # All fetch methods failed.
+            # Force retry in calling function by raising original exception
+            raise ex from None
 
 
-    async def _async_detect_device_statusses(self):
+    async def _async_detect_devices_statusses(self):
         """
         Fetch device statusses (always)
         """
@@ -555,38 +574,45 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         for device in self._api.device_map.values():
+            await self._async_detect_device_statusses(device.serial)
 
-            # First try to retrieve from API
-            context = f"statusses {device.serial}"
+        
+    async def _async_detect_device_statusses(self, device_serial: str):
+        """
+        Fetch device statusses for a specific device
+        """
+        context = f"statusses {device_serial}"
+
+        for fetch_method in self._fetch_order:
             try:
-                raw = await self._api.async_fetch_device_statusses(device.serial, ret=DabPumpsRet.RAW)
+                match fetch_method:
+                    case DabPumpsCoordinatorFetch.WEB:
+                        await self._api.async_login()
 
-                # Result is in self._api.status_map
-                # We also cache the raw data so we have something to fall back on in case of http errors
-                await self._async_update_cache(context, raw)
-                ex = None
+                        raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
+                        self._cache[context] = raw
+
+                    case DabPumpsCoordinatorFetch.CACHE:
+                        raw = self._cache[context]
+                        await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
+                
+                # If no exception was thrown, then the fetch method succeeded.
+                # Result is in self._api.status_map.
+                return
+
             except Exception as e:
-                if any(status.serial==device.serial for status in self._api.status_map.values()):
-                    # Ignore problems if this is just a refresh
-                    ex = None
+                if any(status.serial==device_serial for status in self._api.status_map.values()):
+                    # Ignore problems if this is just a periodic refresh
+                    return
                 else:
-                    # Try next alternative while remembering original exception
-                    ex = e
+                    # Try next fetch_method while remembering original exception
+                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
+                        ex = e
 
-            if ex:
-                # Next try from (outdated) persisted cache if this is the initial retrieve.
-                # However, we will then set all values to unknown.
-                try:
-                    raw = await self._async_fetch_from_cache(context)
-                    await self._api.async_fetch_device_statusses(device.serial, raw=raw, ret=DabPumpsRet.NONE)
-                    ex = None
-                except Exception:
-                    # Try next alternative while remembering original exception
-                    pass
-
-            if ex:
-                # Force retry in calling function by raising original exception
-                raise ex
+        if ex:
+            # All fetch methods failed.
+            # Force retry in calling function by raising original exception
+            raise ex from None
 
 
     async def _async_detect_strings(self):
@@ -598,34 +624,37 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         context = f"localization_{self.language}"
-        try:
-            raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
 
-            # Result is in self._api.string_map
-            # We also cache the raw data so we have something to fall back on in case of http errors
-            await self._async_update_cache(context, raw)
-            ex = None
-        except Exception as e:
-            if len(self._api.string_map) > 0:
-                # Ignore problems if this is just a refresh
-                ex = None
-            else:
-                # Try next alternative while remembering original exception
-                ex = e
-                
-        if ex:
-            # Next, try from persisted cache if this is the initial retrieve
+        for fetch_method in self._fetch_order:
             try:
-                raw = await self._async_fetch_from_cache(context)
-                await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
-                ex = None
-            except Exception:
-                # Try next alternative while remembering original exception
-                pass
+                match fetch_method:
+                    case DabPumpsCoordinatorFetch.WEB:
+                        await self._api.async_login()
+
+                        raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
+                        self._cache[context] = raw
+
+                    case DabPumpsCoordinatorFetch.CACHE:
+                        raw = self._cache[context]
+                        await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
+                
+                # If no exception was thrown, then the fetch method succeeded.
+                # Result is in self._api.string_map.
+                return
+
+            except Exception as e:
+                if len(self._api.string_map) > 0:
+                    # Ignore problems if this is just a periodic refresh
+                    return
+                else:
+                    # Try next fetch_method while remembering original exception
+                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
+                        ex = e
 
         if ex:
+            # All fetch methods failed.
             # Force retry in calling function by raising original exception
-            raise ex
+            raise ex from None
 
 
     async def _async_detect_installations(self, ignore_exception=False):
@@ -636,48 +665,39 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
         
-        # First try to retrieve from API.
         context = f"installation list"
-        try:
-            raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
 
-            # Result is in self._api.install_map
-            # We also cache the raw data so we have something to fall back on in case of http errors
-            await self._async_update_cache(context, raw)
-            ex = None
-        except Exception as e:
-            if ignore_exception:
-                # Ignore problems
-                ex = None
-            else:
-                # Try next alternative while remembering original exception
-                ex = e
+        for fetch_method in self._fetch_order:
+            try:
+                match fetch_method:
+                    case DabPumpsCoordinatorFetch.WEB:
+                        await self._api.async_login()
+
+                        raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
+                        self._cache[context] = raw
+
+                    case DabPumpsCoordinatorFetch.CACHE:
+                        raw = self._cache[context]
+                        await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
+                
+                # If no exception was thrown, then the fetch method succeeded.
+                # Result is in self._api.install_map.
+                return
+
+            except Exception as e:
+                if ignore_exception:
+                    # Ignore problems
+                    return
+                else:
+                    # Try next fetch_method while remembering original exception
+                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
+                        ex = e
 
         if ex:
+            # All fetch methods failed.
             # Force retry in calling function by raising original exception
-            raise ex
+            raise ex from None
 
-
-    async def _async_update_cache(self, context, data):
-        """
-        Update the memory cache.
-        Persisted cache is saved periodicaly by another function
-        """
-        if self._cache:
-            data["ts"] = datetime.now()
-            self._cache[context] = data
-
-
-    async def _async_fetch_from_cache(self, context):
-        """
-        Fetch from the memory cache
-        """
-        if self._cache:
-            _LOGGER.debug(f"Fetch from cache: {context}")
-            return self._cache.get(context, {})
-        else:
-            return {}
-        
 
     async def async_get_diagnostics(self) -> dict[str, Any]:
         install_map = { k: v._asdict() for k,v in self._api.install_map.items() }
@@ -808,16 +828,80 @@ class DabPumpsCoordinatorStore(Store[dict]):
         return data
     
 
-    async def async_get_data(self):
-        """Load the persisted coordinator_cache file and return the data specific for this coordinator instance"""
+    async def async_load(self):
+        """Load the persisted coordinator storage file and return the data specific for this coordinator instance"""
+        if not self._store_key:
+            return {}
+
         data = await super().async_load() or {}
         data_self = data.get(self._store_key, {})
         return data_self
     
 
-    async def async_set_data(self, data_self):
-        """Save the data specific for this coordinator instance into the persisted coordinator_cache file"""
+    async def async_save(self, data_self):
+        """Save the data specific for this coordinator instance into the persisted coordinator storage file"""
+        if not self._store_key:
+            return
+
         data = await super().async_load() or {}
         data[self._store_key] = data_self
         await super().async_save(data)
+
+
+class DabPumpsCoordinatorCache(dict[str,Any]):
+
+    def __init__(self, store: DabPumpsCoordinatorStore):
+        super().__init__({})
+
+        self._store = store
+        self._last_read = datetime.min
+        self._last_write = datetime.min
+
+
+    def __setitem__(self, key, val):
+        val["ts"] = datetime.utcnow()
+        super().__setitem__(key, val)
+        
+
+    def __getitem__(self, key):
+        _LOGGER.debug(f"Fetch from cache: {key}")
+        return super().__getitem__(key)
+        
+
+    async def async_read(self):
+        """
+        Read the persisted cache (if needed)
+        """
+        if self._last_read > datetime.min:
+            return 
+
+        _LOGGER.debug(f"Read persisted cache")
+        data = await self._store.async_load() or {}
+        super().clear()
+        super().update( data.get("cache", {}) )
+
+        # Set initial cache write timestamp
+        self._last_read = datetime.now()
+        self._last_write = datetime.now()
+
+
+    async def _async_write(self):
+        """
+        Write the persisted cache
+        """
+        if len(self) == 0:
+            return
+
+        if (datetime.now() - self._last_write).total_seconds() < COORDINATOR_CACHE_WRITE_PERIOD:
+            return        
+            
+        _LOGGER.debug(f"Write persisted cache")
+        self._last_write = datetime.now()
+
+        data = await self._store.async_load() or {}
+        data["cache"] = { k:v for k,v in super().items() }
+        await self._store.async_save(data)
+        
+
+
     
