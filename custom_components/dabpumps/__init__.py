@@ -24,7 +24,6 @@ from .coordinator import (
 )
 
 from .const import (
-    STARTUP_MESSAGE,
     DOMAIN,
     PLATFORMS,
     API,
@@ -36,8 +35,6 @@ from .const import (
 
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.info(STARTUP_MESSAGE)
-
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
