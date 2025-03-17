@@ -95,10 +95,3 @@ COORDINATOR_RETRY_ATTEMPTS = 10
 COORDINATOR_RETRY_DELAY = 5    # seconds
 COORDINATOR_TIMEOUT = 120   # seconds
 COORDINATOR_CACHE_WRITE_PERIOD = 300 # seconds
-
-STARTUP_MESSAGE = f"""
-----------------------------------------------------------------------------
-{NAME}
-Domain: {DOMAIN}
-----------------------------------------------------------------------------
-"""
