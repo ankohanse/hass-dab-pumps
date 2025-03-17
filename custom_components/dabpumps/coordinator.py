@@ -859,7 +859,7 @@ class DabPumpsCoordinatorCache(dict[str,Any]):
 
 
     def __setitem__(self, key, val):
-        val["ts"] = datetime.utcnow()
+        val["ts"] = datetime.now(timezone.utc)
         super().__setitem__(key, val)
         
 
