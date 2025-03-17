@@ -23,8 +23,9 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.significant_change import check_percentage_change
 
-from datetime import timedelta
 from datetime import datetime
+from datetime import timezone
+from datetime import timedelta
 
 from collections import defaultdict
 from collections import namedtuple
@@ -37,10 +38,7 @@ from aiodabpumps import (
 
 from .const import (
     DOMAIN,
-    COORDINATOR,
-    CONF_INSTALL_ID,
-    CONF_INSTALL_NAME,
-    CONF_OPTIONS,
+    STATUS_VALIDITY_PERIOD,
 )
 
 from .coordinator import (
@@ -154,8 +152,13 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         Set entity value, unit and icon
         """
 
-        # Gather attributes
-        attr_val = status.value
+        # Is the status expired?
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
+            attr_val = status.value
+        else:
+            attr_val = None
+
+        # Gather other attributes
         attr_unit = self.get_unit();
 
         match self._params.type:

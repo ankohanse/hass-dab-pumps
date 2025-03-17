@@ -26,8 +26,9 @@ from homeassistant.const import (
     STATE_OFF,
 )
 
-from datetime import timedelta
 from datetime import datetime
+from datetime import timezone
+from datetime import timedelta
 
 from collections import defaultdict
 from collections import namedtuple
@@ -44,12 +45,9 @@ from .coordinator import (
 
 from .const import (
     DOMAIN,
-    COORDINATOR,
-    CONF_INSTALL_ID,
-    CONF_INSTALL_NAME,
-    CONF_OPTIONS,
     SWITCH_VALUES_ON,
     SWITCH_VALUES_OFF,
+    STATUS_VALIDITY_PERIOD,
 )
 
 from .entity_base import (
@@ -162,19 +160,25 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         Set entity value, unit and icon
         """
         
-        # Use original status.code, not translated status.value to compare
-        if status.code in SWITCH_VALUES_ON:
-            attr_is_on = True
-            attr_state = STATE_ON
-            
-        elif status.code in SWITCH_VALUES_OFF:
-            attr_is_on = False
-            attr_state = STATE_OFF
+        # Is the status expired?
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
 
+            # Use original status.code, not translated status.value to compare
+            if status.code in SWITCH_VALUES_ON:
+                attr_is_on = True
+                attr_state = STATE_ON
+                
+            elif status.code in SWITCH_VALUES_OFF:
+                attr_is_on = False
+                attr_state = STATE_OFF
+
+            else:
+                attr_is_on = None
+                attr_state = None
         else:
             attr_is_on = None
             attr_state = None
-        
+
         # update value if it has changed
         if self._attr_is_on != attr_is_on or force:
 

@@ -175,6 +175,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # counters for diagnostics
         self._diag_retries: dict[int, int] = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
         self._diag_durations: dict[int, int] = { n: 0 for n in range(10) }
+        self._diag_fetch: dict[str, int] = { n.name: 0 for n in DabPumpsCoordinatorFetch }
         self._diag_api_counters: dict[str, int] = {}
         self._diag_api_history: list[DabPumpsApiHistoryItem] = []
         self._diag_api_details: dict[str, DabPumpsApiHistoryDetail] = {}
@@ -443,6 +444,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         raw = self._cache[context]
                         await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
                 
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(fetch = fetch_method)
+
                 # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.device_map.
                 return
@@ -493,6 +497,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         raw = self._cache[context]
                         await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
                 
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(fetch = fetch_method)
+
                 # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.device_map.
                 return
@@ -546,6 +553,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         raw = self._cache[context]
                         await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
                 
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(fetch = fetch_method)
+
                 # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.config_map.
                 return
@@ -596,6 +606,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         raw = self._cache[context]
                         await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
                 
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(fetch = fetch_method)
+
                 # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.status_map.
                 return
@@ -638,6 +651,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         raw = self._cache[context]
                         await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
                 
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(fetch = fetch_method)
+
                 # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.string_map.
                 return
@@ -680,6 +696,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                         raw = self._cache[context]
                         await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
                 
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(fetch = fetch_method)
+
                 # If no exception was thrown, then the fetch method succeeded.
                 # Result is in self._api.install_map.
                 return
@@ -716,6 +735,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         durations_counter = dict(sorted(self._diag_durations.items()))
         durations_percent = { key: round(100.0 * n / durations_total, 2) for key, n in durations_counter.items() }
 
+        fetch_total = sum(self._diag_fetch.values()) or 1
+        fetch_counter = dict(sorted(self._diag_fetch.items()))
+        fetch_percent = { key: round(100.0 * n / fetch_total, 2) for key, n in fetch_counter.items() }
+
         api_calls_total = sum([ n for key, n in self._diag_api_counters.items() ]) or 1
         api_calls_counter = { key: n for key, n in self._diag_api_counters.items() }
         api_calls_percent = { key: round(100.0 * n / api_calls_total, 2) for key, n in self._diag_api_counters.items() }
@@ -730,6 +753,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "durations": {
                     "counter": durations_counter,
                     "percent": durations_percent,
+                },
+                "fetch": {
+                    "counter": fetch_counter,
+                    "percent": fetch_percent,
                 },
             },
             "data": {
@@ -762,7 +789,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         }
     
 
-    def _update_statistics(self, retries = None, duration = None):
+    def _update_statistics(self, retries: int|None = None, duration: timedelta|None = None, fetch: DabPumpsCoordinatorFetch|None = None):
         if retries is not None:
             if retries in self._diag_retries:
                 self._diag_retries[retries] += 1
@@ -775,6 +802,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._diag_durations[duration] = 1
             else:
                 self._diag_durations[duration] += 1
+
+        if fetch is not None:
+            if fetch.name not in self._diag_fetch:
+                self._diag_fetch[fetch.name] = 1
+            else:
+                self._diag_fetch[fetch.name] += 1
 
 
     def _diag_api_handler(self, context, item:DabPumpsApiHistoryItem, detail:DabPumpsApiHistoryDetail, data:dict):

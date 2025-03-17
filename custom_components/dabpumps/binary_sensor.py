@@ -26,9 +26,9 @@ from homeassistant.helpers.entity_registry import async_get
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-
-from datetime import timedelta
 from datetime import datetime
+from datetime import timezone
+from datetime import timedelta
 
 from collections import defaultdict
 from collections import namedtuple
@@ -41,13 +41,9 @@ from aiodabpumps import (
 
 from .const import (
     DOMAIN,
-    COORDINATOR,
-    CONF_INSTALL_ID,
-    CONF_INSTALL_NAME,
-    CONF_OPTIONS,
     BINARY_SENSOR_VALUES_ON,
     BINARY_SENSOR_VALUES_OFF,
-    BINARY_SENSOR_VALUES_ALL,
+    STATUS_VALIDITY_PERIOD,
 )
 
 from .coordinator import (
@@ -171,11 +167,16 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         Set entity value, unit and icon
         """
 
-        # Use original status.code, not translated status.value to compare
-        if status.code in BINARY_SENSOR_VALUES_ON:
-            is_on = True
-        elif status.code in BINARY_SENSOR_VALUES_OFF:
-            is_on = False
+        # Is the status expired?
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
+        
+            # Use original status.code, not translated status.value to compare
+            if status.code in BINARY_SENSOR_VALUES_ON:
+                is_on = True
+            elif status.code in BINARY_SENSOR_VALUES_OFF:
+                is_on = False
+            else:
+                is_on = None
         else:
             is_on = None
             
