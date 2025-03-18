@@ -93,9 +93,9 @@ class DabPumpsCoordinatorFetch(Enum):
     CACHE = 1
 
 class DabPumpsCoordinatorFetchOrder():
-    CONFIG: Final = (DabPumpsCoordinatorFetch.WEB) 
-    INIT: Final = (DabPumpsCoordinatorFetch.CACHE, DabPumpsCoordinatorFetch.WEB)
-    NEXT: Final = (DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.CACHE)
+    CONFIG: Final = ( DabPumpsCoordinatorFetch.WEB, )   # Deliberate trailing comma to force create a tuple
+    INIT: Final = ( DabPumpsCoordinatorFetch.CACHE, DabPumpsCoordinatorFetch.WEB )
+    NEXT: Final = ( DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.CACHE )
 
 
 class DabPumpsCoordinatorFactory:
@@ -897,7 +897,7 @@ class DabPumpsCoordinatorCache(dict[str,Any]):
         
 
     def __getitem__(self, key):
-        _LOGGER.debug(f"Fetch from cache: {key}")
+        _LOGGER.debug(f"Try fetch from cache: {key}")
         return super().__getitem__(key)
         
 

@@ -73,6 +73,13 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._install_id = None
         self._install_name = None
         self._errors = None
+
+        # Assign the HA configured log level of this module to the aiodabpumps module
+        log_level: int = _LOGGER.getEffectiveLevel()
+        lib_logger: logging.Logger = logging.getLogger("aiodabpumps")
+        lib_logger.setLevel(log_level)
+
+        _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")
     
     
     async def async_try_connection(self):
@@ -88,6 +95,8 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 _LOGGER.info("Successfully connected!")
                 _LOGGER.debug(f"install_map: {self._install_map}")
                 return True
+            else:
+                self._errors = f"No installations detected"
         
         except DabPumpsApiError as e:
             self._errors = f"Failed to connect to DAB Pumps DConnect website: {e}"
