@@ -94,6 +94,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if self._install_map:
                 _LOGGER.info("Successfully connected!")
                 _LOGGER.debug(f"install_map: {self._install_map}")
+                self._errors = None
                 return True
             else:
                 self._errors = f"No installations detected"
@@ -131,8 +132,8 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(
             step_id = "user", 
             data_schema = vol.Schema({
-                vol.Required(CONF_USERNAME, description={"suggested_value": DEFAULT_USERNAME}): str,
-                vol.Required(CONF_PASSWORD, description={"suggested_value": DEFAULT_PASSWORD}): str,
+                vol.Required(CONF_USERNAME, description={"suggested_value": self._username or DEFAULT_USERNAME}): str,
+                vol.Required(CONF_PASSWORD, description={"suggested_value": self._password or DEFAULT_PASSWORD}): str,
             }),
             errors = self._errors
         )

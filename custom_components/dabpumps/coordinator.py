@@ -223,19 +223,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return self._api.create_id(*args)
 
 
-    async def async_config_flow_data(self):
-        """
-        Fetch installation data from API.
-        """
-        _LOGGER.debug(f"Config flow data")
-        self._fetch_order = DabPumpsCoordinatorFetchOrder.CONFIG
-
-        await self._async_detect_install_list()
-        
-        #_LOGGER.debug(f"install_map: {self._api.install_map}")
-        return (self._api.install_map)
-
-
     async def async_create_devices(self, config_entry: ConfigEntry):
         """
         Add all detected devices to the hass device_registry
@@ -261,6 +248,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 hw_version = device.hw_version,
                 sw_version = device.sw_version,
             )
+
+
+    async def async_config_flow_data(self):
+        """
+        Fetch installation data from API.
+        """
+        _LOGGER.debug(f"Config flow data")
+        self._fetch_order = DabPumpsCoordinatorFetchOrder.CONFIG
+
+        await self._async_detect_install_list()  
+        
+        #_LOGGER.debug(f"install_map: {self._api.install_map}")
+        return (self._api.install_map)
 
 
     async def _async_update_data(self):
@@ -309,7 +309,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         error = None
         ts_start = datetime.now()
 
-        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
+        # Only try once during config instead of using COORDINATOR_RETRY_ATTEMPTS.
+        # If all login methods fail, we want to know immediately.
+        retries = 0
+        for retry in range(0, retries+1):
             try:
                 # Fetch the list of installations
                 await self._async_detect_installations()
@@ -324,11 +327,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Log off, end session and retry if possible
             await self._api.async_logout();  
             
-            if retry < COORDINATOR_RETRY_ATTEMPTS:
-                if retry < 2:
-                    _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                else:
-                    _LOGGER.warning(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
+            if retry < retries:
+                _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
                 await asyncio.sleep(COORDINATOR_RETRY_DELAY)
             
         if error:
@@ -344,7 +344,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         error = None
         ts_start = datetime.now()
 
-        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
+        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS+1):
             try:
                 # Once a day, attempt to refresh
                 # - list of translations
@@ -372,10 +372,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             await self._api.async_logout();  
             
             if retry < COORDINATOR_RETRY_ATTEMPTS:
-                if retry < 2:
-                    _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                else:
-                    _LOGGER.warning(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
+                _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
                 await asyncio.sleep(COORDINATOR_RETRY_DELAY)
             
         if error:
@@ -390,7 +387,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         error = None
         ts_start = datetime.now()
 
-        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS):
+        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS+1):
             try:
                 # Attempt to change the device status via the API
                 await self._api.async_login()
@@ -407,10 +404,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             await self._api.async_logout();  
             
             if retry < COORDINATOR_RETRY_ATTEMPTS:
-                if retry < 2:
-                    _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                else:
-                    _LOGGER.warning(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
+                _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
                 await asyncio.sleep(COORDINATOR_RETRY_DELAY)
             
         if error:
