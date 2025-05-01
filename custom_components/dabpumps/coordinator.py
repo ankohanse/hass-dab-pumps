@@ -107,24 +107,35 @@ class DabPumpsCoordinatorFactory:
         """
     
         # Get properties from the config_entry
-        username = config_entry.data[CONF_USERNAME]
-        password = config_entry.data[CONF_PASSWORD]
-        install_id = config_entry.data[CONF_INSTALL_ID]
-        install_name = config_entry.data[CONF_INSTALL_NAME]
+        configs = config_entry.data
         options = config_entry.options
+
+        username = configs[CONF_USERNAME]
+        password = configs[CONF_PASSWORD]
+        install_id = configs[CONF_INSTALL_ID]
         
+        # Sanity check
+        if not DOMAIN in hass.data:
+            hass.data[DOMAIN] = {}
         if not COORDINATOR in hass.data[DOMAIN]:
             hass.data[DOMAIN][COORDINATOR] = {}
             
         # already created?
         coordinator = hass.data[DOMAIN][COORDINATOR].get(install_id, None)
+        if coordinator:
+            # Verify that config and options are still the same (== and != do a recursive dict compare)
+            if coordinator.configs != configs or coordinator.options != options:
+                # Not the same; force recreate of the coordinator
+                coordinator = None
+
         if not coordinator:
             # Get an instance of the DabPumpsApi for these credentials
             # This instance may be shared with other coordinators that use the same credentials
             api = DabPumpsApiFactory.create(hass, username, password)
         
             # Get an instance of our coordinator. This is unique to this install_id
-            coordinator = DabPumpsCoordinator(hass, api, install_id, options)
+            coordinator = DabPumpsCoordinator(hass, api, configs, options)
+
             hass.data[DOMAIN][COORDINATOR][install_id] = coordinator
             
         return coordinator
@@ -138,21 +149,21 @@ class DabPumpsCoordinatorFactory:
     
         # Get properties from the config_entry
         hass = async_get_hass()
-        install_id = None
+        configs = {}
         options = {}
         
         # Get a temporary instance of the DabPumpsApi for these credentials
         api = DabPumpsApiFactory.create_temp(hass, username, password)
         
         # Get an instance of our coordinator. This is unique to this install_id
-        coordinator = DabPumpsCoordinator(hass, api, install_id, options)
+        coordinator = DabPumpsCoordinator(hass, api, configs, options)
         return coordinator
     
 
 class DabPumpsCoordinator(DataUpdateCoordinator):
     """My custom coordinator."""
 
-    def __init__(self, hass: HomeAssistant, api: DabPumpsApi, install_id: str, options: dict):
+    def __init__(self, hass: HomeAssistant, api: DabPumpsApi, configs: dict[str,Any], options: dict[str,Any]):
         """
         Initialize my coordinator.
         """
@@ -167,8 +178,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         )
 
         self._api: DabPumpsApi = api
-        self._install_id: str = install_id
-        self._options: dict = options
+        self._configs: dict[str,Any] = configs
+        self._options: dict[str,Any] = options
+
+        self._install_id = configs.get(CONF_INSTALL_ID, None)
+        self._install_name = configs.get(CONF_INSTALL_NAME, None)
 
         self._fetch_order = DabPumpsCoordinatorFetchOrder.INIT
 
@@ -185,9 +199,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # Persisted cached data in case communication to DAB Pumps fails
         self._hass: HomeAssistant = hass
-        self._store_key: str = install_id
+        self._store_key: str = self._install_id
         self._store: DabPumpsCoordinatorStore = DabPumpsCoordinatorStore(hass, self._store_key)
         self._cache: DabPumpsCoordinatorCache = DabPumpsCoordinatorCache(self._store)
+        
+
     @staticmethod
     def system_language() -> str:
         """
@@ -199,6 +215,24 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 
     @property
+    def configs(self) -> dict[str,Any]:
+        return self._configs
+    
+
+    @property
+    def options(self) ->dict[str,Any]:
+        return self._options
+    
+
+    @property
+    def install_id(self) -> str:
+        return self._install_id
+    
+
+    @property
+    def install_name(self) -> str:
+        return self._install_name
+    
 
     @property
     def string_map(self) -> dict[str, str]:
@@ -229,10 +263,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Add all detected devices to the hass device_registry
         """
 
-        install_id: str = config_entry.data[CONF_INSTALL_ID]
-        install_name: str = config_entry.data[CONF_INSTALL_NAME]
-
-        _LOGGER.info(f"Create devices for installation '{install_name}' ({install_id})")
+        _LOGGER.info(f"Create devices for installation '{self._install_name}' ({self._install_id})")
         dr: DeviceRegistry = device_registry.async_get(self.hass)
        
         for device in self._api.device_map.values():

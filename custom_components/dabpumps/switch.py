@@ -77,7 +77,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, install_id: str, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -90,11 +90,10 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a select entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        unique_id = self.coordinator.create_id(device.name, status.key)
+        unique_id = self._coordinator.create_id(device.name, status.key)
         
         self.object_id = object_id                          # Device.serial + status.key
         self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
-        self.install_id = install_id
 
         self._coordinator = coordinator
         self._device = device

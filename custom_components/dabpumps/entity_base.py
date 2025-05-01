@@ -23,7 +23,6 @@ from .const import (
     DOMAIN,
     PLATFORMS,
     NAME,
-    HELPER,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
@@ -46,40 +45,24 @@ class DabPumpsEntityHelperFactory:
     @staticmethod
     def create(hass: HomeAssistant, config_entry: ConfigEntry):
         """
-        Get existing helper for a config entry, or create a new one if it does not yet exist
+        Get entity helper for a config entry.
+        The entry is short lived (only during init) and does not contain state data,
+        therefore no need to cache it in hass.data
         """
     
-        # Get properties from the config_entry
-        install_id = config_entry.data[CONF_INSTALL_ID]
-        install_name = config_entry.data[CONF_INSTALL_NAME]
-        options = config_entry.options
-
-        if not HELPER in hass.data[DOMAIN]:
-            hass.data[DOMAIN][HELPER] = {}
-            
-        # already created?
-        helper = hass.data[DOMAIN][HELPER].get(install_id, None)
-        if not helper:
-            # Get an instance of our helper. This is unique to this install_id
-            helper = DabPumpsEntityHelper(hass, config_entry, install_id, install_name, options)
-            hass.data[DOMAIN][HELPER][install_id] = helper
-            
-        return helper
+        # Get an instance of the DabPumpsCoordinator for this install_id
+        coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
+    
+        # Get an instance of our helper
+        return DabPumpsEntityHelper(hass, coordinator)
 
 
 class DabPumpsEntityHelper:
     """My custom helper to provide common functions."""
     
-    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry, install_id, install_name, options):
-        self.install_id = install_id
-        self.install_name = install_name
-        self.options = options
-
-        # Get an instance of the DabPumpsCoordinator for this install_id
-        self.coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
-
-        # Get entity registry
-        self.entity_registry = entity_registry.async_get(hass)
+    def __init__(self, hass: HomeAssistant, coordinator: DabPumpsCoordinator):
+        self._coordinator = coordinator
+        self._entity_registry = entity_registry.async_get(hass)
         
     
     async def async_setup_entry(self, target_platform, target_class, async_add_entities: AddEntitiesCallback):
@@ -87,7 +70,7 @@ class DabPumpsEntityHelper:
         Setting up the adding and updating of sensor and binary_sensor entities
         """    
         # Get data from the coordinator
-        (device_map, config_map, status_map) = self.coordinator.data
+        (device_map, config_map, status_map) = self._coordinator.data
         
         if not device_map or not config_map or not status_map:
             # If data returns False or is empty, log an error and return
@@ -96,7 +79,7 @@ class DabPumpsEntityHelper:
         
         other_platforms = [p for p in PLATFORMS if p != target_platform]
         
-        _LOGGER.debug(f"Create {target_platform} entities for installation '{self.install_name}' ({self.install_id})")
+        _LOGGER.debug(f"Create {target_platform} entities for installation '{self._coordinator.install_name}' ({self._coordinator.install_id})")
 
         # Iterate all statusses to create sensor entities
         entities = []
@@ -104,7 +87,7 @@ class DabPumpsEntityHelper:
 
             # skip statusses that are not associated with a device in this installation
             device = device_map.get(status.serial, None)
-            if not device or device.install_id != self.install_id:
+            if not device or device.install_id != self._coordinator.install_id:
                 continue
             
             config = config_map.get(device.config_id, None)
@@ -129,7 +112,7 @@ class DabPumpsEntityHelper:
             # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
             entity = None                
             try:
-                entity = target_class(self.coordinator, self.install_id, object_id, device, params, status)
+                entity = target_class(self._coordinator, object_id, device, params, status)
                 entities.append(entity)
             except Exception as  ex:
                 _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
@@ -138,14 +121,15 @@ class DabPumpsEntityHelper:
             if entity:
                 for p in other_platforms:
                     try:
-                        entity_id = self.entity_registry.async_get_entity_id(p, DOMAIN, entity.unique_id)
+                        entity_id = self._entity_registry.async_get_entity_id(p, DOMAIN, entity.unique_id)
                         if entity_id:
                             _LOGGER.info(f"Remove obsolete {entity_id} that is replaced by {platform}.{entity.unique_id}")
-                            self.entity_registry.async_remove(entity_id)
+                            self._entity_registry.async_remove(entity_id)
+
                     except Exception as  ex:
                         _LOGGER.warning(f"Could not remove obsolete {p}.{entity.unique_id} entity. Details: {ex}")
 
-        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self.install_name}' with {len(device_map)} devices")
+        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self._coordinator.install_name}' with {len(device_map)} devices")
         if entities:
             async_add_entities(entities)
     
@@ -183,7 +167,7 @@ class DabPumpsEntityHelper:
         ]
 
         # First check if entity is allowed to be viewed according to user_role
-        if self.coordinator.user_role not in params.view:
+        if self._coordinator.user_role not in params.view:
             return False
         
         # Then check individual keys
@@ -223,7 +207,7 @@ class DabPumpsEntityHelper:
             'System Management',
         ]
         is_config = False
-        if self.coordinator.user_role in params.change:
+        if self._coordinator.user_role in params.change:
             if params.key in keys_config:
                 is_config = True
             elif params.group in groups_config:

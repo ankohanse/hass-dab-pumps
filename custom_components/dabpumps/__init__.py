@@ -13,11 +13,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.translation import async_get_translations
 
-from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
-)
-
 from .coordinator import (
     DabPumpsCoordinatorFactory,
     DabPumpsCoordinator
@@ -26,9 +21,6 @@ from .coordinator import (
 from .const import (
     DOMAIN,
     PLATFORMS,
-    API,
-    COORDINATOR,
-    HELPER,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
 )
@@ -41,7 +33,6 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the component."""
-    _clear_hass_data(hass)
 
     for entry in hass.config_entries.async_entries(DOMAIN):
         if not isinstance(entry.unique_id, str):
@@ -49,14 +40,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 entry, unique_id=str(entry.unique_id)
             )
     return True
-
-
-def _clear_hass_data(hass):
-    hass.data[DOMAIN] = {
-        API: {},         # key is username+hash(password)
-        COORDINATOR: {}, # key is install_id
-        HELPER: {}       # key is install_id
-    }
 
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
@@ -70,16 +53,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")
 
     # Get properties from the config_entry
-    username = config_entry.data[CONF_USERNAME]
-    password = config_entry.data[CONF_PASSWORD]
-    install_id = config_entry.data[CONF_INSTALL_ID]
-    install_name = config_entry.data[CONF_INSTALL_NAME]
-    options = config_entry.options
+    install_id: str = config_entry.data[CONF_INSTALL_ID]
+    install_name: str = config_entry.data[CONF_INSTALL_NAME]
 
     _LOGGER.info(f"Setup config entry for installation '{install_name}' ({install_id})")
     
     # Get an instance of the DabPumpsCoordinator for this install_id
-    coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
+    coordinator: DabPumpsCoordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
     
     # Fetch initial data so we have data when entities subscribe
     #
@@ -95,18 +75,13 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
     # Reload entry when it is updated
-    # config_entry.async_on_unload(config_entry.add_update_listener(_async_update_listener))
-    config_entry.add_update_listener(_async_update_listener)
+    config_entry.async_on_unload(config_entry.add_update_listener(_async_update_listener))
     
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, config_entry: ConfigEntry):
     success = await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS)
-    if success:
-        # Force re-create of Coordinator and Api on a subsequent async_setup_entry
-        _clear_hass_data(hass)
-
     return success
 
 

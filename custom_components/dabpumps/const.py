@@ -28,7 +28,6 @@ PLATFORMS: list[Platform] = [
 HUB = "Hub"
 API = "Api"
 COORDINATOR = "Coordinator"
-HELPER = "Helper"
 
 DEFAULT_USERNAME = ""
 DEFAULT_PASSWORD = ""

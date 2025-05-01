@@ -2,10 +2,6 @@
 
 import logging
 
-from datetime import datetime
-from typing import Any
-from yarl import URL
-
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
@@ -32,6 +28,9 @@ class DabPumpsApiFactory:
     
         key = f"{username.lower()}_{hash(password) % 10**8}"
     
+        # Sanity check
+        if not DOMAIN in hass.data:
+            hass.data[DOMAIN] = {}
         if not API in hass.data[DOMAIN]:
             hass.data[DOMAIN][API] = {}
             
