@@ -188,7 +188,17 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._store_key: str = install_id
         self._store: DabPumpsCoordinatorStore = DabPumpsCoordinatorStore(hass, self._store_key)
         self._cache: DabPumpsCoordinatorCache = DabPumpsCoordinatorCache(self._store)
-        
+    @staticmethod
+    def system_language() -> str:
+        """
+        Get HASS system language as set under Settings->System->General.
+        Unless that language is not allowed in DConnect DAB LANGUAGE_MAP, in that case fallback to DEFAULT_LANGUAGE
+        """
+        hass = async_get_hass()
+        return hass.config.language.split('-', 1)[0] # split from 'en-GB' to just 'en'
+
+
+    @property
 
     @property
     def string_map(self) -> dict[str, str]:
@@ -204,20 +214,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     def language(self) -> str:
         lang = self._options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
         if lang == LANGUAGE_AUTO:
-            system_lang = self.system_language
+            system_lang = DabPumpsCoordinator.system_language()
             lang = system_lang if system_lang in LANGUAGE_MAP else LANGUAGE_AUTO_FALLBACK
     
         return lang
     
-
-    @property
-    def system_language(self) -> str:
-        """
-        Get HASS system language as set under Settings->System->General.
-        Unless that language is not allowed in DConnect DAB LANGUAGE_MAP, in that case fallback to DEFAULT_LANGUAGE
-        """
-        return self.hass.config.language.split('-', 1)[0] # split from 'en-GB' to just 'en'
-
 
     def create_id(self, *args):
         return self._api.create_id(*args)

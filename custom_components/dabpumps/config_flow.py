@@ -197,17 +197,15 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        return OptionsFlowHandler()
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handles options flow for the component."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
-        if not self.config_entry.options:
-            self.config_entry.options = {}
+        super().__init__()
 
         self._polling_interval = None
         self._language_code = None
@@ -220,10 +218,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
 
     def _get_language_auto_text(self):
-        username = self.config_entry.data[CONF_USERNAME]
-        password = self.config_entry.data[CONF_PASSWORD]
-        coordinator = DabPumpsCoordinatorFactory.create_temp(username, password)
-        system_language_code = coordinator.system_language
+        system_language_code = DabPumpsCoordinator.system_language()
 
         if system_language_code in LANGUAGE_MAP:
             system_language_name = LANGUAGE_MAP[system_language_code]
