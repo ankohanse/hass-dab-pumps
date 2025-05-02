@@ -126,9 +126,12 @@ class DabPumpsCoordinatorFactory:
             # Verify that config and options are still the same (== and != do a recursive dict compare)
             if coordinator.configs != configs or coordinator.options != options:
                 # Not the same; force recreate of the coordinator
+                _LOGGER.debug(f"Settings have changed; force use of new coordinator")
                 coordinator = None
 
         if not coordinator:
+            _LOGGER.debug(f"Create coordinator")
+
             # Get an instance of the DabPumpsApi for these credentials
             # This instance may be shared with other coordinators that use the same credentials
             api = DabPumpsApiFactory.create(hass, username, password)
@@ -137,6 +140,8 @@ class DabPumpsCoordinatorFactory:
             coordinator = DabPumpsCoordinator(hass, api, configs, options)
 
             hass.data[DOMAIN][COORDINATOR][install_id] = coordinator
+        else:
+            _LOGGER.debug(f"Reuse coordinator")
             
         return coordinator
 
@@ -156,6 +161,7 @@ class DabPumpsCoordinatorFactory:
         api = DabPumpsApiFactory.create_temp(hass, username, password)
         
         # Get an instance of our coordinator. This is unique to this install_id
+        _LOGGER.debug(f"create temp coordinator")
         coordinator = DabPumpsCoordinator(hass, api, configs, options)
         return coordinator
     
