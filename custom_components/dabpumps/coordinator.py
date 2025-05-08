@@ -20,6 +20,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.core import async_get_hass
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry
+from homeassistant.helpers import entity_registry
 from homeassistant.helpers.device_registry import DeviceRegistry
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -192,6 +193,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         self._fetch_order = DabPumpsCoordinatorFetchOrder.INIT
 
+        # Keep track of entity and device ids during init so we can cleanup unused ids later
+        self._valid_unique_ids: dict[Platform, list[str]] = {}
+        self._valid_device_ids: list[tuple[str,str]] = []
+
         # counters for diagnostics
         self._diag_retries: dict[int, int] = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
         self._diag_durations: dict[int, int] = { n: 0 for n in range(10) }
@@ -264,6 +269,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return self._api.create_id(*args)
 
 
+    def set_valid_unique_ids(self, platform: Platform, ids: list[str]):
+        self._valid_unique_ids[platform] = ids
+
+
     async def async_create_devices(self, config_entry: ConfigEntry):
         """
         Add all detected devices to the hass device_registry
@@ -271,7 +280,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info(f"Create devices for installation '{self._install_name}' ({self._install_id})")
         dr: DeviceRegistry = device_registry.async_get(self.hass)
-       
+        valid_ids: list[tuple[str,str]] = []
+
         for device in self._api.device_map.values():
             _LOGGER.debug(f"Create device {device.serial} ({device.name})")
 
@@ -286,6 +296,43 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 hw_version = device.hw_version,
                 sw_version = device.sw_version,
             )
+            valid_ids.append( (DOMAIN, device.serial) )
+
+        # Remember valid device ids so we can do a cleanup of invalid ones later
+        self._valid_device_ids = valid_ids
+
+
+    async def async_cleanup_devices(self, config_entry: ConfigEntry):
+        """
+        cleanup all devices that are no longer in use
+        """
+        _LOGGER.info(f"Cleanup devices")
+
+        dr = device_registry.async_get(self.hass)
+        known_devices = device_registry.async_entries_for_config_entry(dr, config_entry.entry_id)
+
+        for device in known_devices:
+            if all(id not in self._valid_device_ids for id in device.identifiers):
+                _LOGGER.info(f"Remove obsolete device {next(iter(device.identifiers))}")
+                dr.async_remove_device(device.id)
+
+
+    async def async_cleanup_entities(self, config_entry: ConfigEntry):
+        """
+        cleanup all entities that are no longer in use
+        """
+        _LOGGER.info(f"Cleanup entities")
+
+        er = entity_registry.async_get(self.hass)
+        known_entities = entity_registry.async_entries_for_config_entry(er, config_entry.entry_id)
+
+        for entity in known_entities:
+            # Note that platform and domain are mixed up in entity_registry
+            valid_unique_ids = self._valid_unique_ids.get(entity.domain, [])
+
+            if entity.unique_id not in valid_unique_ids:
+                _LOGGER.info(f"Remove obsolete entity {entity.entity_id} ({entity.unique_id})")
+                er.async_remove(entity.entity_id)
 
 
     async def async_config_flow_data(self):

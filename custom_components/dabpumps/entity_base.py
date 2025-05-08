@@ -83,6 +83,8 @@ class DabPumpsEntityHelper:
 
         # Iterate all statusses to create sensor entities
         entities = []
+        valid_unique_ids: list[str] = []
+
         for object_id, status in status_map.items():
 
             # skip statusses that are not associated with a device in this installation
@@ -94,11 +96,9 @@ class DabPumpsEntityHelper:
             if not config:
                 continue
             
-            if not config.meta_params or status.key not in config.meta_params:
-                _LOGGER.warning(f"Device metadata holds no info to create a sensor for '{status.key}' with value '{status.value}'.")
+            params = config.meta_params.get(status.key, None) if config.meta_params else None
+            if not params:
                 continue
-            
-            params = config.meta_params[status.key]
 
             if not self._is_entity_whitelisted(params):
                 # Some statusses (error1...error64) are deliberately skipped
@@ -114,21 +114,16 @@ class DabPumpsEntityHelper:
             try:
                 entity = target_class(self._coordinator, object_id, device, params, status)
                 entities.append(entity)
+                
+                valid_unique_ids.append(entity.unique_id)
+
             except Exception as  ex:
                 _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
 
-            # See if new entity already existed under another platform. If so, then remove the old entity.
-            if entity:
-                for p in other_platforms:
-                    try:
-                        entity_id = self._entity_registry.async_get_entity_id(p, DOMAIN, entity.unique_id)
-                        if entity_id:
-                            _LOGGER.info(f"Remove obsolete {entity_id} that is replaced by {platform}.{entity.unique_id}")
-                            self._entity_registry.async_remove(entity_id)
+        # Remember valid unique_ids per platform so we can do an entity cleanup later
+        self._coordinator.set_valid_unique_ids(target_platform, valid_unique_ids)
 
-                    except Exception as  ex:
-                        _LOGGER.warning(f"Could not remove obsolete {p}.{entity.unique_id} entity. Details: {ex}")
-
+        # Now add the entities to the entity_registry
         _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self._coordinator.install_name}' with {len(device_map)} devices")
         if entities:
             async_add_entities(entities)
