@@ -36,9 +36,9 @@ class DabPumpsApiFactory:
             hass.data[DOMAIN][API] = {}
             
         # if a DabPumpsApi instance for these credentials is already available then re-use it
-        (api,client) = hass.data[DOMAIN][API].get(key, (None,None))
+        api = hass.data[DOMAIN][API].get(key, None)
 
-        if not api or not client or client.closed:
+        if not api or api.closed:
             _LOGGER.debug(f"create Api")
 
             # Create a fresh http client
@@ -48,7 +48,7 @@ class DabPumpsApiFactory:
             api = DabPumpsApi(username, password, client=client)
 
             # Remember this DabPumpsApi instance
-            hass.data[DOMAIN][API][key] = (api, client)
+            hass.data[DOMAIN][API][key] = api
         else:
             _LOGGER.debug(f"reuse Api")
 
@@ -70,9 +70,9 @@ class DabPumpsApiFactory:
             hass.data[DOMAIN][API] = {}
             
         # if a DabPumpsApi instance for these credentials is already available then re-use it
-        (api,client) = hass.data[DOMAIN][API].get(key, (None,None))
+        api = hass.data[DOMAIN][API].get(key, None)
         
-        if not api or not client or client.closed:
+        if not api or api.closed:
             _LOGGER.debug(f"create temp Api")
 
             # Create a fresh http client
