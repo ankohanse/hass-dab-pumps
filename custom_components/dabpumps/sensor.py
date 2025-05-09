@@ -169,16 +169,22 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
             case 'enum' | 'label' | _:
                 attr_precision = None
 
-        # additional check for TOTAL and TOTAL_INCREASING values:
-        # ignore decreases that are not significant (less than 50% change)
-        if self._attr_state_class in [SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING] and \
-           self._attr_native_value is not None and \
-           attr_val is not None and \
-           attr_val < self._attr_native_value and \
-           not check_percentage_change(self._attr_native_value, attr_val, 50):
+        # additional checks for TOTAL and TOTAL_INCREASING values
+        if self._attr_state_class in [SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING]:
+
+            # ignore first update for TOTAL and TOTAL_INCREASING values as the value will have come from persisted cache 
+            # and is almost certainly not the newest value (more strict expiry check then above)
+            if force:
+                attr_val = None
+
+            # ignore decreases that are not significant (less than 50% change)
+            if self._attr_native_value is not None and \
+               attr_val is not None and \
+               attr_val < self._attr_native_value and \
+               not check_percentage_change(self._attr_native_value, attr_val, 50):
             
-            _LOGGER.debug(f"Ignore non-significant decrease in sensor '{status.key}' ({self.unique_id}) from {self._attr_native_value} to {attr_val}")
-            attr_val = self._attr_native_value
+                _LOGGER.debug(f"Ignore non-significant decrease in sensor '{status.key}' ({self.unique_id}) from {self._attr_native_value} to {attr_val}")
+                attr_val = self._attr_native_value
 
         # update value if it has changed
         if self._attr_native_value != attr_val or force:
