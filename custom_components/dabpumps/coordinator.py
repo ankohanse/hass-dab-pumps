@@ -433,11 +433,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             try:
                 # Once a day, attempt to refresh
                 # - list of translations
+                await self._async_detect_strings()
+
+                # Once an hour, attempt to refresh
                 # - list of installations (just for diagnostics)
                 # - installation details and devices
                 # - additional device details
                 # - device configurations
-                await self._async_detect_strings()
                 await self._async_detect_installations(ignore_exception=True)
                 await self._async_detect_install_details()
                 await self._async_detect_devices_details()
@@ -504,7 +506,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Attempt to refresh installation details and devices when the cached one expires (once a day)
         """
-        if (datetime.now() - self._api.device_map_ts).total_seconds() < 86400:
+        if (datetime.now() - self._api.device_map_ts).total_seconds() < 3600:
             # Not yet expired
             return
         
@@ -549,7 +551,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Attempt to refresh device details (once a day)
         """
-        if (datetime.now() - self._api.device_detail_ts).total_seconds() < 86400:
+        if (datetime.now() - self._api.device_detail_ts).total_seconds() < 3600:
             # Not yet expired
             return
         
@@ -602,7 +604,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Attempt to refresh device configurations (once a day)
         """
-        if (datetime.now() - self._api.config_map_ts).total_seconds() < 86400:
+        if (datetime.now() - self._api.config_map_ts).total_seconds() < 3600:
             # Not yet expired
             return
         
@@ -756,7 +758,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Attempt to refresh the list of installations (once a day, just for diagnostocs)
         """
-        if (datetime.now() - self._api.install_map_ts).total_seconds() < 86400:
+        if (datetime.now() - self._api.install_map_ts).total_seconds() < 3600:
             # Not yet expired
             return
         
