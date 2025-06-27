@@ -225,7 +225,10 @@ class DabPumpsEntityHelper:
                 
             # Is it a numeric type?
             elif params.type == 'measure':
-                return Platform.NUMBER
+                if params.unit == 's':
+                    return Platform.TIME
+                else:
+                    return Platform.NUMBER
         
         # Only view rights or does not fit in one of the modifyable entities
         if params.type == 'enum':
