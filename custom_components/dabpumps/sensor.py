@@ -165,9 +165,15 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
                     attr_precision = int(math.floor(math.log10(1.0 / self._params.weight)))
                 else:
                     attr_precision = 0;
-        
+            
             case 'enum' | 'label' | _:
                 attr_precision = None
+
+                # Sensors with device_class enum cannot have a unit of measurement
+                # Instead include the unit with the value. Occurs for Easybox Diver 'tankminlev'.
+                if attr_val and attr_unit:
+                    attr_val = f"{attr_val} {attr_unit}"
+                attr_unit = None
 
         # additional checks for TOTAL and TOTAL_INCREASING values
         if self._attr_state_class in [SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING]:
