@@ -171,8 +171,6 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
             else:
                 hour = int(status.value // 3600)
                 minute = int( (status.value % 3600) // 60)
-
-                _LOGGER.info(f"Get {self.entity_id} from {hour}:{minute} ({status.value})")
                 attr_val = time(hour, minute)
         else:
             attr_val = None
