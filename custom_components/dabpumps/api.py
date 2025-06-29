@@ -1,10 +1,12 @@
 """api.py: DabPumps API for DAB Pumps integration."""
 
 import aiohttp
+import httpx
 import logging
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.httpx_client import create_async_httpx_client
 
 from aiodabpumps import (
     DabPumpsApi,
@@ -40,9 +42,10 @@ class DabPumpsApiFactory:
 
         if not api or api.closed:
             _LOGGER.debug(f"create Api")
-
+            
             # Create a fresh http client
-            client: aiohttp.ClientSession = async_create_clientsession(hass)  
+            client: aiohttp.ClientSession = async_create_clientsession(hass) 
+            #client: httpx.AsyncClient = create_async_httpx_client(hass)
 
             # Create a new DabPumpsApi instance
             api = DabPumpsApi(username, password, client=client)
