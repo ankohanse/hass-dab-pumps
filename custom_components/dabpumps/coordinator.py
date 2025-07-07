@@ -81,25 +81,43 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-
-# Define fetch orders:
-# - On first fetch, we try to fetch old data from cache (faster) and fallback to fetch new data from web (slower)
-# - On next fetches, we try to fetch new data from web (slower) and fallback to fetch old data from cache
-#
-# This allows for a faster startup of the integration
-#
-
 class DabPumpsCoordinatorFetch(Enum):
-    WEB = 0
-    CACHE = 1
+    """Fetch methods"""
+    WEB = 0     # slower, contains new data
+    CACHE = 1   # faster, but old data
+
+    def __str__(self):
+        return self.name
+    
+    def __repr__(self):
+        return self.name
+
 
 class DabPumpsCoordinatorFetchOrder():
+    """Fetch orders"""
+
+    # On config, we try to fetch new data from web (slower)
+    # No retries; if all login methods fail, we want to know immediately
     CONFIG: Final = ( DabPumpsCoordinatorFetch.WEB, )   # Deliberate trailing comma to force create a tuple
-    INIT: Final = ( DabPumpsCoordinatorFetch.CACHE, DabPumpsCoordinatorFetch.WEB )
-    NEXT: Final = ( DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.CACHE )
+
+    # On first fetch, we try to fetch old data from cache (faster) and 
+    # fallback to fetch new data from web (slower and with two retries)
+    # This allows for a faster startup of the integration
+    INIT: Final = ( DabPumpsCoordinatorFetch.CACHE, DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, )
+
+    # On next fetches, we try to fetch new data from web (slower) and 
+    # fallback to fetch old data from cache.
+    # Entities will display "unknown" once we keep depending on cached data and it gets too old.
+    NEXT: Final = ( DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.CACHE, )
+
+    # On change, we try to write the changed data to web (slower) with two retries
+    CHANGE: Final = ( DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, )
+
+
 
 
 class DabPumpsCoordinatorFactory:
+    """Factory to help create the Coordinator"""
     
     @staticmethod
     def create(hass: HomeAssistant, config_entry: ConfigEntry):
@@ -394,27 +412,24 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         error = None
         ts_start = datetime.now()
 
-        # Only try once during config instead of using COORDINATOR_RETRY_ATTEMPTS.
-        # If all login methods fail, we want to know immediately.
-        retries = 0
-        for retry in range(0, retries+1):
+        for retry,fetch_method in enumerate(self._fetch_order):
             try:
+                fetch_history = self._fetch_order[slice(retry)]
+
+                # Check access token, if needed do a logout, wait and re-login
+                await self._async_login(fetch_method, fetch_history)
+                
                 # Fetch the list of installations
-                await self._async_detect_installations()
+                await self._async_detect_installations(fetch_method)
                 
                 # Keep track of how many retries were needed and duration
-                self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(retries = retry, duration = datetime.now()-ts_start, fetch=fetch_method)
                 return True;
             
             except Exception as ex:
                 error = str(ex)
-            
-            # Log off, end session and retry if possible
-            await self._api.async_logout();  
-            
-            if retry < retries:
-                _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                await asyncio.sleep(COORDINATOR_RETRY_DELAY)
+                _LOGGER.debug(error)
             
         if error:
             _LOGGER.warning(error)
@@ -428,40 +443,41 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         warnings = []
         error = None
         ts_start = datetime.now()
+        fetch_web_done = False
 
-        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS+1):
+        for retry,fetch_method in enumerate(self._fetch_order):
             try:
+                fetch_history = self._fetch_order[slice(retry)]
+
+                # Check access token, if needed do a logout, wait and re-login
+                await self._async_login(fetch_method, fetch_history)
+
                 # Once a day, attempt to refresh
                 # - list of translations
-                await self._async_detect_strings()
+                await self._async_detect_strings(fetch_method)
 
                 # Once an hour, attempt to refresh
                 # - list of installations (just for diagnostics)
                 # - installation details and devices
                 # - additional device details
                 # - device configurations
-                await self._async_detect_installations(ignore_exception=True)
-                await self._async_detect_install_details()
-                await self._async_detect_devices_details()
-                await self._async_detect_devices_configs()
+                await self._async_detect_installations(fetch_method, ignore_exception=True)
+                await self._async_detect_install_details(fetch_method)
+                await self._async_detect_devices_details(fetch_method)
+                await self._async_detect_devices_configs(fetch_method)
 
                 # Always fetch device statusses
-                await self._async_detect_devices_statusses()
+                await self._async_detect_devices_statusses(fetch_method)
 
                 # Keep track of how many retries were needed and duration
-                self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(retries = retry, duration = datetime.now()-ts_start, fetch = fetch_method)
                 return True
             
             except Exception as ex:
                 error = str(ex)
-            
-            # Log off, end session and retry if possible
-            await self._api.async_logout();  
-            
-            if retry < COORDINATOR_RETRY_ATTEMPTS:
-                _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                await asyncio.sleep(COORDINATOR_RETRY_DELAY)
-            
+                _LOGGER.debug(error)
+
         if error:
             _LOGGER.warning(error)
         
@@ -473,26 +489,30 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     async def _async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
         error = None
         ts_start = datetime.now()
+        fetch_web_done = False
 
-        for retry in range(0, COORDINATOR_RETRY_ATTEMPTS+1):
+        for retry,fetch_method in enumerate(DabPumpsCoordinatorFetchOrder.CHANGE):
+            
+            if fetch_method != DabPumpsCoordinatorFetch.WEB:
+                continue
+            
             try:
+                fetch_history = self._fetch_order[slice(retry)]
+
+                # Check access token, if needed do a logout, wait and re-login
+                await self._async_login(fetch_method, fetch_history)
+
                 # Attempt to change the device status via the API
-                await self._api.async_login()
                 await self._api.async_change_device_status(status.serial, status.key, code=code, value=value)
 
                 # Keep track of how many retries were needed and duration
-                self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(retries = retry, duration = datetime.now()-ts_start, fetch=fetch_method)
                 return True
             
             except Exception as ex:
                 error = str(ex)
-            
-            # Log off, end session and retry if possible
-            await self._api.async_logout();  
-            
-            if retry < COORDINATOR_RETRY_ATTEMPTS:
-                _LOGGER.info(f"Retry {retry+1} in {COORDINATOR_RETRY_DELAY} seconds. {error}")
-                await asyncio.sleep(COORDINATOR_RETRY_DELAY)
+                _LOGGER.debug(error)
             
         if error:
             _LOGGER.warning(error)
@@ -502,7 +522,36 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return False
 
 
-    async def _async_detect_install_details(self):
+    async def _async_login(self, fetch_method: DabPumpsCoordinatorFetch, fetch_history: list[DabPumpsCoordinatorFetch]):
+        """
+        Attempt to refresh login token when needed.
+        Includes retry handling with closing previous connection and waiting a moment before next try.
+        """
+
+        # Retry handling
+        if len(fetch_history) > 0:
+            if fetch_method == DabPumpsCoordinatorFetch.WEB and fetch_method in fetch_history:
+                # Log off and wait a bit before the next fetch from web
+                await self._api.async_logout(); 
+
+                _LOGGER.info(f"Retry from {str(fetch_method)} in {COORDINATOR_RETRY_DELAY} seconds.")
+                await asyncio.sleep(COORDINATOR_RETRY_DELAY)
+            else:
+                _LOGGER.info(f"Retry from {str(fetch_method)} now")
+
+        # Login if needed
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                # Check if our access token is still valid and re-login if needed.
+                await self._api.async_login()
+
+            case DabPumpsCoordinatorFetch.CACHE:
+                pass    # no login needed to access local cache
+
+        # If no exception was thrown, then the login succeeded or token was still valid.
+
+
+    async def _async_detect_install_details(self, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh installation details and devices when the cached one expires (once a day)
         """
@@ -512,42 +561,20 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         context = f"installation {self._install_id}"
 
-        for fetch_method in self._fetch_order:
-            try:
-                match fetch_method:
-                    case DabPumpsCoordinatorFetch.WEB:
-                        await self._api.async_login()
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
+                self._cache[context] = raw
 
-                        raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
-                        self._cache[context] = raw
+            case DabPumpsCoordinatorFetch.CACHE:
+                raw = self._cache[context]
+                await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
 
-                    case DabPumpsCoordinatorFetch.CACHE:
-                        raw = self._cache[context]
-                        await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
-                
-                # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(fetch = fetch_method)
-
-                # If no exception was thrown, then the fetch method succeeded.
-                # Result is in self._api.device_map.
-                return
-
-            except Exception as e:
-                if len(self._api.device_map) > 0:
-                    # Ignore problems if this is just a periodic refresh
-                    return
-                else:
-                    # Try next fetch_method while remembering original exception
-                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
-                        ex = e
-
-        if ex:
-            # All fetch methods failed.
-            # Force retry in calling function by raising original exception
-            raise ex from None
+        # If no exception was thrown, then the fetch method succeeded.
+        # Result is in self._api.device_map.
 
 
-    async def _async_detect_devices_details(self):
+    async def _async_detect_devices_details(self, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh device details (once a day)
         """
@@ -556,51 +583,29 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         for device in self._api.device_map.values():
-            await self._async_detect_device_details(device.serial)
+            await self._async_detect_device_details(device.serial, fetch_method)
 
 
-    async def _async_detect_device_details(self, device_serial: str):
+    async def _async_detect_device_details(self, device_serial: str, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh device details for a specific device
         """
         context = f"device {device_serial}"
 
-        for fetch_method in self._fetch_order:
-            try:
-                match fetch_method:
-                    case DabPumpsCoordinatorFetch.WEB:
-                        await self._api.async_login()
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
+                self._cache[context] = raw
 
-                        raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
-                        self._cache[context] = raw
+            case DabPumpsCoordinatorFetch.CACHE:
+                raw = self._cache[context]
+                await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
-                    case DabPumpsCoordinatorFetch.CACHE:
-                        raw = self._cache[context]
-                        await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
-                
-                # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(fetch = fetch_method)
-
-                # If no exception was thrown, then the fetch method succeeded.
-                # Result is in self._api.device_map.
-                return
-
-            except Exception as e:
-                if device_serial in self._api.device_map:
-                    # Ignore problems if this is just a periodic refresh
-                    return
-                else:
-                    # Try next fetch_method while remembering original exception
-                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
-                        ex = e
-
-        if ex:
-            # All fetch methods failed.
-            # Force retry in calling function by raising original exception
-            raise ex from None
+        # If no exception was thrown, then the fetch method succeeded.
+        # Result is in self._api.device_map.
 
 
-    async def _async_detect_devices_configs(self):
+    async def _async_detect_devices_configs(self, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh device configurations (once a day)
         """
@@ -612,51 +617,29 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         config_ids = { device.config_id for device in self._api.device_map.values() }
 
         for config_id in config_ids:
-            await self._async_detect_device_configs(config_id)
+            await self._async_detect_device_configs(config_id, fetch_method)
 
     
-    async def _async_detect_device_configs(self, config_id: str):
+    async def _async_detect_device_configs(self, config_id: str, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh device configurations for a specific config id
         """
         context = f"configuration {config_id}"
 
-        for fetch_method in self._fetch_order:
-            try:
-                match fetch_method:
-                    case DabPumpsCoordinatorFetch.WEB:
-                        await self._api.async_login()
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
+                self._cache[context] = raw
 
-                        raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
-                        self._cache[context] = raw
-
-                    case DabPumpsCoordinatorFetch.CACHE:
-                        raw = self._cache[context]
-                        await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
-                
-                # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(fetch = fetch_method)
-
-                # If no exception was thrown, then the fetch method succeeded.
-                # Result is in self._api.config_map.
-                return
-
-            except Exception as e:
-                if config_id in self._api.config_map:
-                    # Ignore problems if this is just a periodic refresh
-                    return
-                else:
-                    # Try next fetch_method while remembering original exception
-                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
-                        ex = e
-
-        if ex:
-            # All fetch methods failed.
-            # Force retry in calling function by raising original exception
-            raise ex from None
+            case DabPumpsCoordinatorFetch.CACHE:
+                raw = self._cache[context]
+                await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
+        
+        # If no exception was thrown, then the fetch method succeeded.
+        # Result is in self._api.config_map.
 
 
-    async def _async_detect_devices_statusses(self):
+    async def _async_detect_devices_statusses(self, fetch_method: DabPumpsCoordinatorFetch):
         """
         Fetch device statusses (always)
         """
@@ -665,51 +648,29 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             return
         
         for device in self._api.device_map.values():
-            await self._async_detect_device_statusses(device.serial)
+            await self._async_detect_device_statusses(device.serial, fetch_method)
 
         
-    async def _async_detect_device_statusses(self, device_serial: str):
+    async def _async_detect_device_statusses(self, device_serial: str, fetch_method: DabPumpsCoordinatorFetch):
         """
         Fetch device statusses for a specific device
         """
         context = f"statusses {device_serial}"
 
-        for fetch_method in self._fetch_order:
-            try:
-                match fetch_method:
-                    case DabPumpsCoordinatorFetch.WEB:
-                        await self._api.async_login()
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
+                self._cache[context] = raw
 
-                        raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
-                        self._cache[context] = raw
+            case DabPumpsCoordinatorFetch.CACHE:
+                raw = self._cache[context]
+                await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
-                    case DabPumpsCoordinatorFetch.CACHE:
-                        raw = self._cache[context]
-                        await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
-                
-                # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(fetch = fetch_method)
-
-                # If no exception was thrown, then the fetch method succeeded.
-                # Result is in self._api.status_map.
-                return
-
-            except Exception as e:
-                if any(status.serial==device_serial for status in self._api.status_map.values()):
-                    # Ignore problems if this is just a periodic refresh
-                    return
-                else:
-                    # Try next fetch_method while remembering original exception
-                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
-                        ex = e
-
-        if ex:
-            # All fetch methods failed.
-            # Force retry in calling function by raising original exception
-            raise ex from None
+        # If no exception was thrown, then the fetch method succeeded.
+        # Result is in self._api.status_map.
 
 
-    async def _async_detect_strings(self):
+    async def _async_detect_strings(self, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh the list of translations (once a day)
         """
@@ -719,42 +680,20 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         context = f"localization_{self.language}"
 
-        for fetch_method in self._fetch_order:
-            try:
-                match fetch_method:
-                    case DabPumpsCoordinatorFetch.WEB:
-                        await self._api.async_login()
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
+                self._cache[context] = raw
 
-                        raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
-                        self._cache[context] = raw
-
-                    case DabPumpsCoordinatorFetch.CACHE:
-                        raw = self._cache[context]
-                        await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
+            case DabPumpsCoordinatorFetch.CACHE:
+                raw = self._cache[context]
+                await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
                 
-                # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(fetch = fetch_method)
-
-                # If no exception was thrown, then the fetch method succeeded.
-                # Result is in self._api.string_map.
-                return
-
-            except Exception as e:
-                if len(self._api.string_map) > 0:
-                    # Ignore problems if this is just a periodic refresh
-                    return
-                else:
-                    # Try next fetch_method while remembering original exception
-                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
-                        ex = e
-
-        if ex:
-            # All fetch methods failed.
-            # Force retry in calling function by raising original exception
-            raise ex from None
+        # If no exception was thrown, then the fetch method succeeded.
+        # Result is in self._api.string_map.
 
 
-    async def _async_detect_installations(self, ignore_exception=False):
+    async def _async_detect_installations(self, fetch_method: DabPumpsCoordinatorFetch, ignore_exception=False):
         """
         Attempt to refresh the list of installations (once a day, just for diagnostocs)
         """
@@ -764,39 +703,17 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
         context = f"installation list"
 
-        for fetch_method in self._fetch_order:
-            try:
-                match fetch_method:
-                    case DabPumpsCoordinatorFetch.WEB:
-                        await self._api.async_login()
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
+                self._cache[context] = raw
 
-                        raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
-                        self._cache[context] = raw
-
-                    case DabPumpsCoordinatorFetch.CACHE:
-                        raw = self._cache[context]
-                        await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
+            case DabPumpsCoordinatorFetch.CACHE:
+                raw = self._cache[context]
+                await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
                 
-                # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(fetch = fetch_method)
-
-                # If no exception was thrown, then the fetch method succeeded.
-                # Result is in self._api.install_map.
-                return
-
-            except Exception as e:
-                if ignore_exception:
-                    # Ignore problems
-                    return
-                else:
-                    # Try next fetch_method while remembering original exception
-                    if fetch_method == DabPumpsCoordinatorFetch.WEB:
-                        ex = e
-
-        if ex:
-            # All fetch methods failed.
-            # Force retry in calling function by raising original exception
-            raise ex from None
+        # If no exception was thrown, then the fetch method succeeded.
+        # Result is in self._api.install_map.
 
 
     async def async_get_diagnostics(self) -> dict[str, Any]:
