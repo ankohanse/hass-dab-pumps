@@ -105,15 +105,14 @@ class DabPumpsCoordinatorFetchOrder():
     # This allows for a faster startup of the integration
     INIT: Final = ( DabPumpsCoordinatorFetch.CACHE, DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, )
 
-    # On next fetches, we try to fetch new data from web (slower) and 
-    # fallback to fetch old data from cache.
-    # Entities will display "unknown" once we keep depending on cached data and it gets too old.
-    NEXT: Final = ( DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.CACHE, )
+    # On next fetches, we try to fetch new data from web (slower). 
+    # No retries, next fetch will be 20 or 30 seconds later anyway. 
+    # Also no need to read cached data; the api already contains these values.
+    # Entities will display "unknown" once existing data gets too old.
+    NEXT: Final = ( DabPumpsCoordinatorFetch.WEB, )   # Deliberate trailing comma to force create a tuple
 
     # On change, we try to write the changed data to web (slower) with two retries
     CHANGE: Final = ( DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, DabPumpsCoordinatorFetch.WEB, )
-
-
 
 
 class DabPumpsCoordinatorFactory:
@@ -206,6 +205,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._configs: dict[str,Any] = configs
         self._options: dict[str,Any] = options
 
+        self._username = configs.get(CONF_USERNAME, None)
         self._install_id = configs.get(CONF_INSTALL_ID, None)
         self._install_name = configs.get(CONF_INSTALL_NAME, None)
 
@@ -430,6 +430,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             except Exception as ex:
                 error = str(ex)
                 _LOGGER.debug(error)
+                await self._async_logout(fetch_method)
             
         if error:
             _LOGGER.warning(error)
@@ -477,6 +478,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             except Exception as ex:
                 error = str(ex)
                 _LOGGER.debug(error)
+                await self._async_logout(fetch_method)
 
         if error:
             _LOGGER.warning(error)
@@ -513,6 +515,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             except Exception as ex:
                 error = str(ex)
                 _LOGGER.debug(error)
+                await self._async_logout(fetch_method)
             
         if error:
             _LOGGER.warning(error)
@@ -525,15 +528,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     async def _async_login(self, fetch_method: DabPumpsCoordinatorFetch, fetch_history: list[DabPumpsCoordinatorFetch]):
         """
         Attempt to refresh login token when needed.
-        Includes retry handling with closing previous connection and waiting a moment before next try.
+        Includes retry handling with waiting a moment before next try.
         """
 
         # Retry handling
         if len(fetch_history) > 0:
             if fetch_method == DabPumpsCoordinatorFetch.WEB and fetch_method in fetch_history:
-                # Log off and wait a bit before the next fetch from web
-                await self._api.async_logout(); 
-
+                # Wait a bit before the next fetch from web
                 _LOGGER.info(f"Retry from {str(fetch_method)} in {COORDINATOR_RETRY_DELAY} seconds.")
                 await asyncio.sleep(COORDINATOR_RETRY_DELAY)
             else:
@@ -549,6 +550,18 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 pass    # no login needed to access local cache
 
         # If no exception was thrown, then the login succeeded or token was still valid.
+
+
+    async def _async_logout(self, fetch_method: DabPumpsCoordinatorFetch):
+        """
+        Logout
+        """
+        match fetch_method:
+            case DabPumpsCoordinatorFetch.WEB:
+                await self._api.async_logout()
+
+            case DabPumpsCoordinatorFetch.CACHE:
+                pass    # no logout needed
 
 
     async def _async_detect_install_details(self, fetch_method: DabPumpsCoordinatorFetch):
@@ -701,12 +714,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
         
-        context = f"installation list"
+        context = f"installations {self._username.lower()}"
 
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
+                self._cache.pop("installation list", None)  # Remove old key naming to prevent confusion when looking in Diagnostics file
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
