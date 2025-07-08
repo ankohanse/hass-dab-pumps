@@ -210,6 +210,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._install_name = configs.get(CONF_INSTALL_NAME, None)
 
         self._fetch_order = DabPumpsCoordinatorFetchOrder.INIT
+        self._fetch_ts: dict[str, datetime] = {}
 
         # Keep track of entity and device ids during init so we can cleanup unused ids later
         self._valid_unique_ids: dict[Platform, list[str]] = {}
@@ -566,18 +567,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     async def _async_detect_install_details(self, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Attempt to refresh installation details and devices when the cached one expires (once a day)
+        Attempt to refresh installation details and devices when the cached one expires (once an hour)
         """
-        if (datetime.now() - self._api.device_map_ts).total_seconds() < 3600:
+        context = f"installation {self._install_id}"
+
+        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
             # Not yet expired
             return
         
-        context = f"installation {self._install_id}"
-
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
+                self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
@@ -589,26 +591,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     async def _async_detect_devices_details(self, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Attempt to refresh device details (once a day)
+        Attempt to refresh device details
         """
-        if (datetime.now() - self._api.device_detail_ts).total_seconds() < 3600:
-            # Not yet expired
-            return
-        
         for device in self._api.device_map.values():
             await self._async_detect_device_details(device.serial, fetch_method)
 
 
     async def _async_detect_device_details(self, device_serial: str, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Attempt to refresh device details for a specific device
+        Attempt to refresh device details for a specific device (once an hour)
         """
         context = f"device {device_serial}"
 
+        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
+            # Not yet expired
+            return
+        
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
+                self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
@@ -620,12 +623,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     async def _async_detect_devices_configs(self, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Attempt to refresh device configurations (once a day)
+        Attempt to refresh device configurations
         """
-        if (datetime.now() - self._api.config_map_ts).total_seconds() < 3600:
-            # Not yet expired
-            return
-        
+
         # Compose set of config_id's (duplicates automatically removed)
         config_ids = { device.config_id for device in self._api.device_map.values() }
 
@@ -635,14 +635,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
     async def _async_detect_device_configs(self, config_id: str, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Attempt to refresh device configurations for a specific config id
+        Attempt to refresh device configurations for a specific config id (once an hour)
         """
         context = f"configuration {config_id}"
 
+        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
+            # Not yet expired
+            return
+        
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
+                self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
@@ -654,19 +659,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     async def _async_detect_devices_statusses(self, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Fetch device statusses (always)
+        Fetch device statusses
         """
-        if (datetime.now() - self._api.status_map_ts).total_seconds() < 0:
-            # Not yet expired
-            return
-        
         for device in self._api.device_map.values():
             await self._async_detect_device_statusses(device.serial, fetch_method)
 
         
     async def _async_detect_device_statusses(self, device_serial: str, fetch_method: DabPumpsCoordinatorFetch):
         """
-        Fetch device statusses for a specific device
+        Fetch device statusses for a specific device (always)
         """
         context = f"statusses {device_serial}"
 
@@ -674,6 +675,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
+                self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
@@ -687,16 +689,17 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Attempt to refresh the list of translations (once a day)
         """
-        if (datetime.now() - self._api.string_map_ts).total_seconds() < 86400:
+        context = f"localization_{self.language}"
+
+        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 86400:
             # Not yet expired
             return
-        
-        context = f"localization_{self.language}"
 
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
+                self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
@@ -708,19 +711,20 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     async def _async_detect_installations(self, fetch_method: DabPumpsCoordinatorFetch, ignore_exception=False):
         """
-        Attempt to refresh the list of installations (once a day, just for diagnostocs)
+        Attempt to refresh the list of installations (once an hour, just for diagnostocs)
         """
-        if (datetime.now() - self._api.install_map_ts).total_seconds() < 3600:
+        context = f"installations {self._username.lower()}"
+
+        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 86400:
             # Not yet expired
             return
         
-        context = f"installations {self._username.lower()}"
-
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
                 self._cache[context] = raw
                 self._cache.pop("installation list", None)  # Remove old key naming to prevent confusion when looking in Diagnostics file
+                self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
                 raw = self._cache[context]
@@ -786,7 +790,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "string_map_lang": self._api.string_map_lang,
                 "string_map": self._api.string_map,
                 "user_role_ts": self._api.user_role_ts,
-                "user_role": self._api.user_role
+                "user_role": self._api.user_role,
+                "fetch_ts": self._fetch_ts,
             },
             "cache": self._cache,
             "api": {
