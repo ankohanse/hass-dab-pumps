@@ -389,7 +389,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._fetch_order = DabPumpsCoordinatorFetchOrder.NEXT
 
         # Periodically persist the cache
-        await self._cache._async_write()
+        await self._cache.async_write()
 
         #_LOGGER.debug(f"device_map: {self._api.device_map}")
         #_LOGGER.debug(f"config_map: {self._api.config_map}")
@@ -907,11 +907,14 @@ class DabPumpsCoordinatorCache(dict[str,Any]):
         self._store = store
         self._last_read = datetime.min
         self._last_write = datetime.min
+        self._last_change = datetime.min
 
 
     def __setitem__(self, key, val):
         val["ts"] = datetime.now(timezone.utc)
         super().__setitem__(key, val)
+
+        self._last_change = datetime.now()
         
 
     def __getitem__(self, key):
@@ -931,19 +934,23 @@ class DabPumpsCoordinatorCache(dict[str,Any]):
         super().clear()
         super().update( data.get("cache", {}) )
 
-        # Set initial cache write timestamp
         self._last_read = datetime.now()
-        self._last_write = datetime.now()
 
 
-    async def _async_write(self):
+    async def async_write(self):
         """
         Write the persisted cache
         """
         if len(self) == 0:
-            return
+            # Nothing to persist
+            return  
 
+        if (self._last_change <= self._last_write):
+            # No changes since last write
+            return
+        
         if (datetime.now() - self._last_write).total_seconds() < COORDINATOR_CACHE_WRITE_PERIOD:
+            # Not long enough since last write
             return        
             
         _LOGGER.debug(f"Write persisted cache")
