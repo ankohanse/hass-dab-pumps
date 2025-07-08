@@ -41,7 +41,7 @@ class DabPumpsApiFactory:
         api = hass.data[DOMAIN][API].get(key, None)
 
         if not api or api.closed:
-            _LOGGER.debug(f"create Api")
+            _LOGGER.debug(f"create Api for account '{username}'")
             
             # Create a fresh http client
             client: aiohttp.ClientSession = async_create_clientsession(hass) 
@@ -53,7 +53,7 @@ class DabPumpsApiFactory:
             # Remember this DabPumpsApi instance
             hass.data[DOMAIN][API][key] = api
         else:
-            _LOGGER.debug(f"reuse Api")
+            _LOGGER.debug(f"reuse Api for account '{username}'")
 
         return api
     

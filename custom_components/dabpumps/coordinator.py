@@ -128,9 +128,10 @@ class DabPumpsCoordinatorFactory:
         configs = config_entry.data
         options = config_entry.options
 
-        username = configs[CONF_USERNAME]
-        password = configs[CONF_PASSWORD]
-        install_id = configs[CONF_INSTALL_ID]
+        username = configs.get(CONF_USERNAME, None)
+        password = configs.get(CONF_PASSWORD, None)
+        install_id = configs.get(CONF_INSTALL_ID, None)
+        install_name = configs.get(CONF_INSTALL_NAME, None)
         
         # Sanity check
         if not DOMAIN in hass.data:
@@ -148,7 +149,7 @@ class DabPumpsCoordinatorFactory:
                 coordinator = None
 
         if not coordinator:
-            _LOGGER.debug(f"Create coordinator")
+            _LOGGER.debug(f"Create coordinator for installation '{install_name}' ({install_id}) from account '{username}'")
 
             # Get an instance of the DabPumpsApi for these credentials
             # This instance may be shared with other coordinators that use the same credentials
@@ -159,7 +160,7 @@ class DabPumpsCoordinatorFactory:
 
             hass.data[DOMAIN][COORDINATOR][install_id] = coordinator
         else:
-            _LOGGER.debug(f"Reuse coordinator")
+            _LOGGER.debug(f"Reuse coordinator for installation '{install_name}' ({install_id})")
             
         return coordinator
 
@@ -179,7 +180,7 @@ class DabPumpsCoordinatorFactory:
         api = DabPumpsApiFactory.create_temp(hass, username, password)
         
         # Get an instance of our coordinator. This is unique to this install_id
-        _LOGGER.debug(f"create temp coordinator")
+        _LOGGER.debug(f"create temp coordinator for account '{username}'")
         coordinator = DabPumpsCoordinator(hass, api, configs, options)
         return coordinator
     
