@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import async_timeout
 import json
 import logging
@@ -230,8 +231,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # Persisted cached data in case communication to DAB Pumps fails
         self._hass: HomeAssistant = hass
-        self._store_key: str = self._install_id
-        self._store: DabPumpsCoordinatorStore = DabPumpsCoordinatorStore(hass, self._store_key)
+        self._store: DabPumpsCoordinatorStore = DabPumpsCoordinatorStore(hass, self._install_id, self._install_name)
         self._cache: DabPumpsCoordinatorCache = DabPumpsCoordinatorCache(self._store)
         
 
@@ -858,15 +858,18 @@ class DabPumpsCoordinatorStore(Store[dict]):
     _STORAGE_VERSION_MAJOR = 1
     _STORAGE_VERSION_MINOR = 0
     _STORAGE_KEY = DOMAIN + ".coordinator"
+
+    _static_readwrite_lock = threading.Lock()
     
-    def __init__(self, hass, store_key):
+    def __init__(self, hass, install_id: str, install_name: str):
         super().__init__(
             hass, 
             key=self._STORAGE_KEY, 
             version=self._STORAGE_VERSION_MAJOR, 
             minor_version=self._STORAGE_VERSION_MINOR
         )
-        self._store_key = store_key
+        self._install_id = install_id
+        self._install_name = install_name
 
     
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
@@ -879,32 +882,49 @@ class DabPumpsCoordinatorStore(Store[dict]):
         return data
     
 
-    async def async_load(self):
+    async def async_load_section(self, section_key: str):
         """Load the persisted coordinator storage file and return the data specific for this coordinator instance"""
-        if not self._store_key:
+        if not self._install_id:
             return {}
 
-        data = await super().async_load() or {}
-        data_self = data.get(self._store_key, {})
-        return data_self
+        _LOGGER.debug(f"Read persisted {section_key} for '{self._install_name}' ({self._install_id})")
+        
+        with DabPumpsCoordinatorStore._static_readwrite_lock:
+            data = await super().async_load() or {}
+
+            install_data = data.get(self._install_id, {})
+            section_data = install_data.get(section_key, None)
+
+            return section_data
     
 
-    async def async_save(self, data_self):
+    async def async_update_section(self, section_key: str, section_data: Any):
         """Save the data specific for this coordinator instance into the persisted coordinator storage file"""
-        if not self._store_key:
+        if not self._install_id:
             return
 
-        data = await super().async_load() or {}
-        data[self._store_key] = data_self
-        await super().async_save(data)
+        _LOGGER.debug(f"Write persisted {section_key} for '{self._install_name}' ({self._install_id})")
+        
+        with DabPumpsCoordinatorStore._static_readwrite_lock:
+            data = await super().async_load() or {}
+
+            if not self._install_id in data:
+                data[self._install_id] = {}
+
+            data[self._install_id][section_key] = section_data
+
+            await super().async_save(data)
 
 
 class DabPumpsCoordinatorCache(dict[str,Any]):
+
+    _SECTION_KEY = "cache"
 
     def __init__(self, store: DabPumpsCoordinatorStore):
         super().__init__({})
 
         self._store = store
+
         self._last_read = datetime.min
         self._last_write = datetime.min
         self._last_change = datetime.min
@@ -929,10 +949,9 @@ class DabPumpsCoordinatorCache(dict[str,Any]):
         if self._last_read > datetime.min:
             return 
 
-        _LOGGER.debug(f"Read persisted cache")
-        data = await self._store.async_load() or {}
+        cache_data = await self._store.async_load_section(self._SECTION_KEY) or {}
         super().clear()
-        super().update( data.get("cache", {}) )
+        super().update(cache_data)
 
         self._last_read = datetime.now()
 
@@ -953,12 +972,10 @@ class DabPumpsCoordinatorCache(dict[str,Any]):
             # Not long enough since last write
             return        
             
-        _LOGGER.debug(f"Write persisted cache")
         self._last_write = datetime.now()
 
-        data = await self._store.async_load() or {}
-        data["cache"] = { k:v for k,v in super().items() }
-        await self._store.async_save(data)
+        cache_data = { k:v for k,v in super().items() }
+        await self._store.async_update_section(self._SECTION_KEY, cache_data)
         
 
 
