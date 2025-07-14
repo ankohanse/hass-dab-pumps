@@ -1,12 +1,8 @@
 import asyncio
-import threading
-import async_timeout
-import json
 import logging
-import re
 
 from collections import namedtuple
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Final
 
@@ -25,12 +21,7 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.device_registry import DeviceRegistry
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.storage import Store
-from homeassistant.helpers.update_coordinator import (
-    CoordinatorEntity,
-    DataUpdateCoordinator,
-    UpdateFailed,
-)
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from homeassistant.const import (
     CONF_USERNAME,
@@ -75,7 +66,12 @@ from .const import (
     COORDINATOR_RETRY_ATTEMPTS,
     COORDINATOR_RETRY_DELAY,
     COORDINATOR_TIMEOUT,
-    COORDINATOR_CACHE_WRITE_PERIOD,
+    STORE_KEY_CACHE,
+    CACHE_WRITE_PERIOD,
+)
+
+from .store import (
+    DabPumpsStore,
 )
 
 
@@ -165,6 +161,7 @@ class DabPumpsCoordinatorFactory:
             
         return coordinator
 
+
     @staticmethod
     def create_temp(username: str, password: str):
         """
@@ -231,8 +228,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # Persisted cached data in case communication to DAB Pumps fails
         self._hass: HomeAssistant = hass
-        self._store: DabPumpsCoordinatorStore = DabPumpsCoordinatorStore(hass, self._install_id, self._install_name)
-        self._cache: DabPumpsCoordinatorCache = DabPumpsCoordinatorCache(self._store)
+        self._cache: DabPumpsStore = DabPumpsStore(hass, STORE_KEY_CACHE, CACHE_WRITE_PERIOD)
         
 
     @staticmethod
@@ -579,11 +575,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
-                self._cache[context] = raw
+                self._cache.set(context, raw)
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache[context]
+                raw = self._cache.get(context)
                 await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
 
         # If no exception was thrown, then the fetch method succeeded.
@@ -611,11 +607,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
-                self._cache[context] = raw
+                self._cache.set(context, raw)
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache[context]
+                raw = self._cache.get(context)
                 await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
         # If no exception was thrown, then the fetch method succeeded.
@@ -647,11 +643,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
-                self._cache[context] = raw
+                self._cache.set(context, raw)
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache[context]
+                raw = self._cache.get(context)
                 await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
         
         # If no exception was thrown, then the fetch method succeeded.
@@ -675,11 +671,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
-                self._cache[context] = raw
+                self._cache.set(context, raw)
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache[context]
+                raw = self._cache.get(context)
                 await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
         # If no exception was thrown, then the fetch method succeeded.
@@ -699,11 +695,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         match fetch_method:
             case DabPumpsCoordinatorFetch.WEB:
                 raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
-                self._cache[context] = raw
+                self._cache.set(context, raw)
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache[context]
+                raw = self._cache.get(context)
                 await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
                 
         # If no exception was thrown, then the fetch method succeeded.
@@ -720,16 +716,22 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
         
-        match fetch_method:
-            case DabPumpsCoordinatorFetch.WEB:
-                raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
-                self._cache[context] = raw
-                self._cache.pop("installation list", None)  # Remove old key naming to prevent confusion when looking in Diagnostics file
-                self._fetch_ts[context] = datetime.now()
+        try:
+            match fetch_method:
+                case DabPumpsCoordinatorFetch.WEB:
+                    raw = await self._api.async_fetch_install_list(ret=DabPumpsRet.RAW)
+                    self._cache.set(context, raw)
+                    self._fetch_ts[context] = datetime.now()
 
-            case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache[context]
-                await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
+                case DabPumpsCoordinatorFetch.CACHE:
+                    raw = self._cache.get(context)
+
+                    if raw or not ignore_exception:
+                        await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
+
+        except Exception as e:
+            if not ignore_exception:
+                raise e from None
                 
         # If no exception was thrown, then the fetch method succeeded.
         # Result is in self._api.install_map.
@@ -755,6 +757,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         fetch_total = sum(self._diag_fetch.values()) or 1
         fetch_counter = dict(sorted(self._diag_fetch.items()))
         fetch_percent = { key: round(100.0 * n / fetch_total, 2) for key, n in fetch_counter.items() }
+
+        cache = { k: v for k,v in self._cache.items() }
 
         api_calls_total = sum([ n for key, n in self._diag_api_counters.items() ]) or 1
         api_calls_counter = { key: n for key, n in self._diag_api_counters.items() }
@@ -794,7 +798,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "user_role": self._api.user_role,
                 "fetch_ts": self._fetch_ts,
             },
-            "cache": self._cache,
+            "cache": cache,
             "api": {
                 "data": self._diag_api_data,
                 "calls": {
@@ -849,134 +853,3 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._diag_api_data = self._diag_api_data | data
 
 
-class DabPumpsDataError(Exception):
-    """Exception to indicate generic data failure."""    
-
-
-class DabPumpsCoordinatorStore(Store[dict]):
-    
-    _STORAGE_VERSION_MAJOR = 1
-    _STORAGE_VERSION_MINOR = 0
-    _STORAGE_KEY = DOMAIN + ".coordinator"
-
-    _static_readwrite_lock = threading.Lock()
-    
-    def __init__(self, hass, install_id: str, install_name: str):
-        super().__init__(
-            hass, 
-            key=self._STORAGE_KEY, 
-            version=self._STORAGE_VERSION_MAJOR, 
-            minor_version=self._STORAGE_VERSION_MINOR
-        )
-        self._install_id = install_id
-        self._install_name = install_name
-
-    
-    async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
-        """Migrate the history store data"""
-
-        if old_major_version <= 1:
-            # version 1 is the current version. No migrate needed
-            data = old_data
-
-        return data
-    
-
-    async def async_load_section(self, section_key: str):
-        """Load the persisted coordinator storage file and return the data specific for this coordinator instance"""
-        if not self._install_id:
-            return {}
-
-        _LOGGER.debug(f"Read persisted {section_key} for '{self._install_name}' ({self._install_id})")
-        
-        with DabPumpsCoordinatorStore._static_readwrite_lock:
-            data = await super().async_load() or {}
-
-            install_data = data.get(self._install_id, {})
-            section_data = install_data.get(section_key, None)
-
-            return section_data
-    
-
-    async def async_update_section(self, section_key: str, section_data: Any):
-        """Save the data specific for this coordinator instance into the persisted coordinator storage file"""
-        if not self._install_id:
-            return
-
-        _LOGGER.debug(f"Write persisted {section_key} for '{self._install_name}' ({self._install_id})")
-        
-        with DabPumpsCoordinatorStore._static_readwrite_lock:
-            data = await super().async_load() or {}
-
-            if not self._install_id in data:
-                data[self._install_id] = {}
-
-            data[self._install_id][section_key] = section_data
-
-            await super().async_save(data)
-
-
-class DabPumpsCoordinatorCache(dict[str,Any]):
-
-    _SECTION_KEY = "cache"
-
-    def __init__(self, store: DabPumpsCoordinatorStore):
-        super().__init__({})
-
-        self._store = store
-
-        self._last_read = datetime.min
-        self._last_write = datetime.min
-        self._last_change = datetime.min
-
-
-    def __setitem__(self, key, val):
-        val["ts"] = datetime.now(timezone.utc)
-        super().__setitem__(key, val)
-
-        self._last_change = datetime.now()
-        
-
-    def __getitem__(self, key):
-        _LOGGER.debug(f"Try fetch from cache: {key}")
-        return super().__getitem__(key)
-        
-
-    async def async_read(self):
-        """
-        Read the persisted cache (if needed)
-        """
-        if self._last_read > datetime.min:
-            return 
-
-        cache_data = await self._store.async_load_section(self._SECTION_KEY) or {}
-        super().clear()
-        super().update(cache_data)
-
-        self._last_read = datetime.now()
-
-
-    async def async_write(self):
-        """
-        Write the persisted cache
-        """
-        if len(self) == 0:
-            # Nothing to persist
-            return  
-
-        if (self._last_change <= self._last_write):
-            # No changes since last write
-            return
-        
-        if (datetime.now() - self._last_write).total_seconds() < COORDINATOR_CACHE_WRITE_PERIOD:
-            # Not long enough since last write
-            return        
-            
-        self._last_write = datetime.now()
-
-        cache_data = { k:v for k,v in super().items() }
-        await self._store.async_update_section(self._SECTION_KEY, cache_data)
-        
-
-
-    
