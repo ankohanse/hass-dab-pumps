@@ -72,7 +72,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._install_map = {}
         self._install_id = None
         self._install_name = None
-        self._errors = None
+        self._errors = {}
 
         # Assign the HA configured log level of this module to the aiodabpumps module
         log_level: int = _LOGGER.getEffectiveLevel()
@@ -86,6 +86,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Test the username and password by connecting to the DConnect website"""
         _LOGGER.info("Trying connection...")
         
+        self._errors = {}
         coordinator = DabPumpsCoordinatorFactory.create_temp(self._username, self._password)
         try:
             # Call the DabPumpsApi with the detect_device method
@@ -94,17 +95,17 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             if self._install_map:
                 _LOGGER.info("Successfully connected!")
                 _LOGGER.debug(f"install_map: {self._install_map}")
-                self._errors = None
+                self._errors = {}
                 return True
             else:
-                self._errors = f"No installations detected"
+                self._errors[CONF_USERNAME] = f"No installations detected"
         
         except DabPumpsApiError as e:
-            self._errors = f"Failed to connect to DAB Pumps DConnect website: {e}"
+            self._errors[CONF_PASSWORD] = f"Failed to connect to DAB Pumps DConnect servers"
         except DabPumpsApiAuthError as e:
-            self._errors = f"Authentication failed: {e}"
+            self._errors[CONF_PASSWORD] = f"Authentication failed"
         except Exception as e:
-            self._errors = f"Unknown error: {e}"
+            self._errors[CONF_PASSWORD] = f"Unknown error: {e}"
         
         return False
     
@@ -210,7 +211,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self._polling_interval = None
         self._language_code = None
         self._language_name = None
-        self._errors = None
+        self._errors = {}
 
         # Display actual system language name or fallback language name inside the LANGUAGE_MAP options
         self._language_map = LANGUAGE_MAP
@@ -232,7 +233,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         """Manage the options."""
         if user_input is not None:
             _LOGGER.debug(f"Options flow handle user input")
-            self._errors = []
+            self._errors = {}
 
             self._polling_interval = user_input[MSG_POLLING_INTERVAL]
             self._language_name = user_input.get(MSG_LANGUAGE, None)

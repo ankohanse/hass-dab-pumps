@@ -171,7 +171,10 @@ class DabPumpsCoordinatorFactory:
     
         # Get properties from the config_entry
         hass = async_get_hass()
-        configs = {}
+        configs = {
+            CONF_USERNAME: username,
+            CONF_PASSWORD: password,
+        }
         options = {}
         
         # Get a temporary instance of the DabPumpsApi for these credentials
@@ -358,7 +361,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(f"Config flow data")
         self._fetch_order = DabPumpsCoordinatorFetchOrder.CONFIG
 
-        await self._async_detect_install_list()  
+        await self._async_detect_for_config()  
         
         #_LOGGER.debug(f"install_map: {self._api.install_map}")
         return (self._api.install_map)
@@ -406,15 +409,16 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return await self._async_change_device_status(status, code=code, value=value)
 
     
-    async def _async_detect_install_list(self):
-        error = None
+    async def _async_detect_for_config(self):
+        ex_first = None
         ts_start = datetime.now()
 
         for retry,fetch_method in enumerate(self._fetch_order):
             try:
                 fetch_history = self._fetch_order[slice(retry)]
 
-                # Check access token, if needed do a logout, wait and re-login
+                # Logout so we really force a subsequent login and not use an old token
+                await self._async_logout(fetch_method)
                 await self._async_login(fetch_method, fetch_history)
                 
                 # Fetch the list of installations
@@ -426,15 +430,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 return True;
             
             except Exception as ex:
-                error = str(ex)
-                _LOGGER.debug(error)
+                _LOGGER.debug(str(ex))
+                if not ex_first:
+                    ex_first = ex
+
                 await self._async_logout(fetch_method)
             
-        if error:
-            _LOGGER.warning(error)
-        
         # Keep track of how many retries were needed and duration
         self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+
+        if ex_first:
+            _LOGGER.warning(str(ex_first))
+            raise ex_first from None
+        
         return False
     
         
