@@ -146,6 +146,7 @@ Special thanks to the following people for their testing and feedback on the fir
 - [Coldness00](https://github.com/Coldness00) on ESybox Mini 3
 - [benjaminmurray](https://github.com/benjaminmurray) on ESybox Mini 3
 - [nicopret1](https://github.com/nicopret1) on ESybox Mini 3
+- [hannovdm](https://github.com/hannovdm) on ESybox V2
 - [Bascht74](https://github.com/Bascht74) on ESybox Diver (with fluid add-on)
 - [Deshan Pillay](https://github.com/Desh86) on the DAB Live connectivity
 
