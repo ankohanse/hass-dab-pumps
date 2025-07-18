@@ -587,7 +587,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context)
+                raw = self._cache.get(context, {})
                 await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
 
         # If no exception was thrown, then the fetch method succeeded.
@@ -619,7 +619,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context)
+                raw = self._cache.get(context, {})
                 await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
         # If no exception was thrown, then the fetch method succeeded.
@@ -655,7 +655,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context)
+                raw = self._cache.get(context, {})
                 await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
         
         # If no exception was thrown, then the fetch method succeeded.
@@ -683,7 +683,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context)
+                raw = self._cache.get(context, {})
                 await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
         # If no exception was thrown, then the fetch method succeeded.
@@ -707,7 +707,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._fetch_ts[context] = datetime.now()
 
             case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context)
+                raw = self._cache.get(context, {})
                 await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
                 
         # If no exception was thrown, then the fetch method succeeded.
@@ -732,10 +732,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     self._fetch_ts[context] = datetime.now()
 
                 case DabPumpsCoordinatorFetch.CACHE:
-                    raw = self._cache.get(context)
-
-                    if raw or not ignore_exception:
-                        await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
+                    raw = self._cache.get(context, {})
+                    await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
 
         except Exception as e:
             if not ignore_exception:
