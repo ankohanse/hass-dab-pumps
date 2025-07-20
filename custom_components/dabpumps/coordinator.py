@@ -289,6 +289,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 
     def set_valid_unique_ids(self, platform: Platform, ids: list[str]):
+        """
+        Set list of valid entity ids for this installation.
+        Called from entity_base when all entities for a platform have been created.
+        """
         self._valid_unique_ids[platform] = ids
 
 
@@ -297,12 +301,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Add all detected devices to the hass device_registry
         """
 
-        _LOGGER.info(f"Create devices for installation '{self._install_name}' ({self._install_id})")
+        _LOGGER.info(f"Create devices for installation '{self._install_name}'")
         dr: DeviceRegistry = device_registry.async_get(self.hass)
         valid_ids: list[tuple[str,str]] = []
 
-        for device in self._api.device_map.values():
-            _LOGGER.debug(f"Create device {device.serial} ({device.name})")
+        install_devices = [ d for d in self._api.device_map.values() if d.install_id == self._install_id ]
+        for device in install_devices:
+            _LOGGER.debug(f"Create device {device.serial} ({device.name}) for installation '{self._install_name}'")
 
             dr.async_get_or_create(
                 config_entry_id = config_entry.entry_id,
@@ -325,32 +330,33 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         cleanup all devices that are no longer in use
         """
-        _LOGGER.info(f"Cleanup devices")
+        _LOGGER.info(f"Cleanup devices for installation '{self._install_name}'")
 
         dr = device_registry.async_get(self.hass)
         known_devices = device_registry.async_entries_for_config_entry(dr, config_entry.entry_id)
 
         for device in known_devices:
             if all(id not in self._valid_device_ids for id in device.identifiers):
-                _LOGGER.info(f"Remove obsolete device {next(iter(device.identifiers))}")
+                _LOGGER.info(f"Remove obsolete device {next(iter(device.identifiers))} from installation '{self._install_name}'")
                 dr.async_remove_device(device.id)
 
 
     async def async_cleanup_entities(self, config_entry: ConfigEntry):
         """
-        cleanup all entities that are no longer in use
+        cleanup all entities within this installation that are no longer in use
         """
-        _LOGGER.info(f"Cleanup entities")
+        _LOGGER.info(f"Cleanup entities for installation '{self._install_name}'")
 
         er = entity_registry.async_get(self.hass)
         known_entities = entity_registry.async_entries_for_config_entry(er, config_entry.entry_id)
 
         for entity in known_entities:
+            # Retrieve all valid ids matching the platform of this known_entity.
             # Note that platform and domain are mixed up in entity_registry
             valid_unique_ids = self._valid_unique_ids.get(entity.domain, [])
 
             if entity.unique_id not in valid_unique_ids:
-                _LOGGER.info(f"Remove obsolete entity {entity.entity_id} ({entity.unique_id})")
+                _LOGGER.info(f"Remove obsolete entity {entity.entity_id} ({entity.unique_id}) from installation '{self._install_name}'")
                 er.async_remove(entity.entity_id)
 
 

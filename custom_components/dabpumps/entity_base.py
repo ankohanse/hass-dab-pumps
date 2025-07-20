@@ -79,7 +79,7 @@ class DabPumpsEntityHelper:
         
         other_platforms = [p for p in PLATFORMS if p != target_platform]
         
-        _LOGGER.debug(f"Create {target_platform} entities for installation '{self._coordinator.install_name}' ({self._coordinator.install_id})")
+        _LOGGER.debug(f"Create {target_platform} entities for installation '{self._coordinator.install_name}'")
 
         # Iterate all statusses to create sensor entities
         entities = []
@@ -124,7 +124,7 @@ class DabPumpsEntityHelper:
         self._coordinator.set_valid_unique_ids(target_platform, valid_unique_ids)
 
         # Now add the entities to the entity_registry
-        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self._coordinator.install_name}' with {len(device_map)} devices")
+        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self._coordinator.install_name}'")
         if entities:
             async_add_entities(entities)
     
