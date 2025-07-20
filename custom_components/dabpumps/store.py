@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+import asyncio
 import logging
 import os
-import threading
+
+from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.helpers.storage import Store
@@ -32,8 +33,11 @@ class DabPumpsStore(Store[dict]):
         """
         if store_key not in cls._instances:
             # If no instance exists for this key then create a new one
+            _LOGGER.debug(f"Create {store_key}")
             instance = super().__new__(cls)
             cls._instances[store_key] = instance
+        else:
+            _LOGGER.debug(f"Reuse {store_key}")
 
         return cls._instances[store_key]
     
@@ -56,7 +60,6 @@ class DabPumpsStore(Store[dict]):
             self._write_period = write_period
 
             self._store_key = store_key            
-            self._store_lock = threading.Lock()
             self._store_data = {}
 
             self._last_read = datetime.min
@@ -64,6 +67,8 @@ class DabPumpsStore(Store[dict]):
             self._last_change = datetime.min
 
             self._migrate_file_checked = False
+            self._migrate_file_lock = asyncio.Lock()
+
             self._initialized = True
 
 
@@ -112,67 +117,84 @@ class DabPumpsStore(Store[dict]):
         """
         Migrate from legacy dabpumps.coordinator file into dabpumps.cache if needed
         """
-        with self._store_lock:
+        try:
+            if self._migrate_file_checked:
+                return
+
             if self._store_key != STORE_KEY_CACHE:
                 # This migrate is only applicable for the 'cache' store
                 return
 
-            key_old = DabPumpsStore.make_key("coordinator")
-            key_new = self.key
-            store_name_old = self.hass.config.path(STORAGE_DIR, key_old)
-            store_name_new = self.hass.config.path(STORAGE_DIR, key_new)
+            async with self._migrate_file_lock:
 
-            if not os.path.isfile(store_name_old):
-                # No old file so nothing to migrate
-                return
+                key_old = DabPumpsStore.make_key("coordinator")
+                key_new = self.key
+                store_name_old = self.hass.config.path(STORAGE_DIR, key_old)
+                store_name_new = self.hass.config.path(STORAGE_DIR, key_new)
 
-            if not os.path.isfile(store_name_new):
-                _LOGGER.info(f"Migrate legacy {key_old} storage into {key_new}")
+                if not os.path.isfile(store_name_old):
+                    # No old file so nothing to migrate
+                    return
 
-                # Try to load using the old key
-                try:
-                    self.set_key(key_old)
-                    self._store_data = await super().async_load()
-                except Exception as e:
-                    _LOGGER.debug(f"Exception: {e}")
-                finally:
-                    self.set_key(key_new)
+                if not os.path.isfile(store_name_new):
+                    _LOGGER.info(f"Migrate legacy {key_old} storage into {key_new}")
 
-                # Save using the new key and delete old file
-                if self._store_data:
-                    await super().async_save(self._store_data)
+                    # Try to load using the old key
+                    try:
+                        self.set_key(key_old)
+                        self._store_data = await super().async_load()
+                    except Exception as e:
+                        _LOGGER.debug(f"Exception: {e}")
+                    finally:
+                        self.set_key(key_new)
 
-            else:
-                # Don't delete legacy file yet. We will wait until next release to do this...
-                #
-                # _LOGGER.info(f"Remove legacy {key_old}")
-                # try:
-                #     self.set_key(key_old)
-                #     await super().async_remove()
-                # except Exception as e:
-                #     _LOGGER.debug(f"Exception: {e}")
-                # finally:
-                #     self.set_key(key_new)
-                pass
-            
+                    # Save using the new key and delete old file
+                    if self._store_data:
+                        await super().async_save(self._store_data)
+
+                else:
+                    # Don't delete legacy file yet. We will wait until next release to do this...
+                    #
+                    # _LOGGER.info(f"Remove legacy {key_old}")
+                    # try:
+                    #     self.set_key(key_old)
+                    #     await super().async_remove()
+                    # except Exception as e:
+                    #     _LOGGER.debug(f"Exception: {e}")
+                    # finally:
+                    #     self.set_key(key_new)
+                    pass
+
+        except Exception as ex:
+            _LOGGER.warning(f"Exception while migrating persisted {self.key}: {ex}")
+            self._store_data = {}
+            self._last_read = datetime.now()
+
+        finally:
+            self._migrate_file_checked = True
+
 
     async def async_read(self):
         """
         Load the persisted storage file and return its data
         """
 
-        # Migrate from old dabpumps.coordinator file if needed
-        if not self._migrate_file_checked:
-            await self._async_migrate_file()
-            self._migrate_file_checked = True
+        await self._async_migrate_file()
 
-        with self._store_lock:
+        try:
+            # Migrate from old dabpumps.coordinator file if needed
             if self._last_read > datetime.min:
                 return 
             
             # Read the persisted file
             _LOGGER.info(f"Read persisted {self.key}")
             self._store_data = await super().async_load() or {}
+
+        except Exception as ex:
+            _LOGGER.warning(f"Exception while reading persisted {self.key}: {ex}")
+            self._store_data = {}
+
+        finally:
             self._last_read = datetime.now()
 
 
@@ -180,7 +202,7 @@ class DabPumpsStore(Store[dict]):
         """
         Save the data into the persisted storage file
         """
-        with self._store_lock:
+        try:
             if len(self._store_data) == 0:
                 # Nothing to persist
                 return 
@@ -195,6 +217,11 @@ class DabPumpsStore(Store[dict]):
 
             _LOGGER.info(f"Write persisted {self.key}")
             await super().async_save(self._store_data)
+
+        except Exception as ex:
+            _LOGGER.warning(f"Exception while writing persisted {self.key}: {ex}")
+
+        finally:
             self._last_write = datetime.now()
 
 
@@ -202,21 +229,19 @@ class DabPumpsStore(Store[dict]):
         """
         Get an item from the store data
         """
-        with self._store_lock:
-            _LOGGER.debug(f"Try fetch from {self.key}: {item_key}")
-            return self._store_data.get(item_key, item_default)
+        _LOGGER.debug(f"Try fetch from {self.key}: {item_key}")
+        return self._store_data.get(item_key, item_default)
     
 
     def set(self, item_key: str, item_val: Any):
         """
         Set an item into the store data
         """
-        if item_val is dict:
+        if isinstance(item_val, dict):
             item_val["ts"] = datetime.now(timezone.utc)
 
-        with self._store_lock:        
-            self._store_data[item_key] = item_val
-            self._last_change = datetime.now()
+        self._store_data[item_key] = item_val
+        self._last_change = datetime.now()
 
 
     def items(self):
