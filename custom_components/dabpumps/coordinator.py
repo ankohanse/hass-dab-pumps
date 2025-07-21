@@ -380,7 +380,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         This is the place to pre-process the data to lookup tables
         so entities can quickly look up their data.
         """
-        _LOGGER.debug(f"Update data")
+        _LOGGER.debug(f"Update data for installation '{self._install_name}'")
 
         # Make sure our cache is available
         await self._cache.async_read()
