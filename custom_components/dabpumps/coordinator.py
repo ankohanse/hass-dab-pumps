@@ -65,7 +65,8 @@ from .const import (
     DIAGNOSTICS_REDACT,
     COORDINATOR_RETRY_ATTEMPTS,
     COORDINATOR_RETRY_DELAY,
-    COORDINATOR_TIMEOUT,
+    COORDINATOR_RELOAD_DELAY,
+    COORDINATOR_RELOAD_DELAY_MAX,
     STORE_KEY_CACHE,
     CACHE_WRITE_PERIOD,
 )
@@ -116,7 +117,7 @@ class DabPumpsCoordinatorFactory:
     """Factory to help create the Coordinator"""
     
     @staticmethod
-    def create(hass: HomeAssistant, config_entry: ConfigEntry):
+    def create(hass: HomeAssistant, config_entry: ConfigEntry, force_create: bool = False):
         """
         Get existing Coordinator for a config entry, or create a new one if it does not yet exist
         """
@@ -129,6 +130,8 @@ class DabPumpsCoordinatorFactory:
         password = configs.get(CONF_PASSWORD, None)
         install_id = configs.get(CONF_INSTALL_ID, None)
         install_name = configs.get(CONF_INSTALL_NAME, None)
+
+        reload_count = 0
         
         # Sanity check
         if not DOMAIN in hass.data:
@@ -138,9 +141,17 @@ class DabPumpsCoordinatorFactory:
             
         # already created?
         coordinator = hass.data[DOMAIN][COORDINATOR].get(install_id, None)
+
         if coordinator:
+            # check for an active reload and copy reload settings when creating a new coordinator
+            reload_count = coordinator.reload_count
+
+            # Forcing a new coordinator?
+            if force_create:
+                coordinator = None
+
             # Verify that config and options are still the same (== and != do a recursive dict compare)
-            if coordinator.configs != configs or coordinator.options != options:
+            elif coordinator.configs != configs or coordinator.options != options:
                 # Not the same; force recreate of the coordinator
                 _LOGGER.debug(f"Settings have changed; force use of new coordinator")
                 coordinator = None
@@ -153,7 +164,10 @@ class DabPumpsCoordinatorFactory:
             api = DabPumpsApiFactory.create(hass, username, password)
         
             # Get an instance of our coordinator. This is unique to this install_id
-            coordinator = DabPumpsCoordinator(hass, api, configs, options)
+            coordinator = DabPumpsCoordinator(hass, config_entry.entry_id, api, configs, options)
+
+            # Apply reload settings if needed
+            coordinator.reload_count = reload_count
 
             hass.data[DOMAIN][COORDINATOR][install_id] = coordinator
         else:
@@ -182,14 +196,14 @@ class DabPumpsCoordinatorFactory:
         
         # Get an instance of our coordinator. This is unique to this install_id
         _LOGGER.debug(f"create temp coordinator for account '{username}'")
-        coordinator = DabPumpsCoordinator(hass, api, configs, options)
+        coordinator = DabPumpsCoordinator(hass, None, api, configs, options)
         return coordinator
     
 
 class DabPumpsCoordinator(DataUpdateCoordinator):
     """My custom coordinator."""
 
-    def __init__(self, hass: HomeAssistant, api: DabPumpsApi, configs: dict[str,Any], options: dict[str,Any]):
+    def __init__(self, hass: HomeAssistant, config_entry_id: str, api: DabPumpsApi, configs: dict[str,Any], options: dict[str,Any]):
         """
         Initialize my coordinator.
         """
@@ -203,6 +217,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             update_method=self._async_update_data,
         )
 
+        self._config_entry_id: str = config_entry_id
         self._api: DabPumpsApi = api
         self._configs: dict[str,Any] = configs
         self._options: dict[str,Any] = options
@@ -215,8 +230,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._fetch_ts: dict[str, datetime] = {}
 
         # Keep track of entity and device ids during init so we can cleanup unused ids later
-        self._valid_unique_ids: dict[Platform, list[str]] = {}
-        self._valid_device_ids: list[tuple[str,str]] = []
+        self._valid_unique_ids: dict[Platform, list[str]] = {} # platform -> entity unique_id
+        self._valid_device_ids: dict[str, tuple[str,str]] = {} # serial -> HA device identifier
 
         # counters for diagnostics
         self._diag_retries: dict[int, int] = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
@@ -232,6 +247,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # Persisted cached data in case communication to DAB Pumps fails
         self._hass: HomeAssistant = hass
         self._cache: DabPumpsStore = DabPumpsStore(hass, STORE_KEY_CACHE, CACHE_WRITE_PERIOD)
+
+        # Auto reload when a new device is detected
+        self._reload_count: int = 0
+        self._reload_time: datetime = datetime.now()
+        self._reload_delay: int = COORDINATOR_RELOAD_DELAY
         
 
     @staticmethod
@@ -284,6 +304,17 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return lang
     
 
+    @property
+    def reload_count(self) -> int:
+        return self._reload_count
+    
+    @reload_count.setter
+    def reload_count(self, count: int):
+        # Double the delay on each next reload to prevent enless reloads if something is wrong.
+        self._reload_count = count
+        self._reload_delay = min( pow(2,count-1)*COORDINATOR_RELOAD_DELAY, COORDINATOR_RELOAD_DELAY_MAX )
+    
+
     def create_id(self, *args):
         return self._api.create_id(*args)
 
@@ -303,7 +334,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info(f"Create devices for installation '{self._install_name}'")
         dr: DeviceRegistry = device_registry.async_get(self.hass)
-        valid_ids: list[tuple[str,str]] = []
+        valid_ids: dict[str, tuple[str,str]] = {}
 
         install_devices = [ d for d in self._api.device_map.values() if d.install_id == self._install_id ]
         for device in install_devices:
@@ -320,7 +351,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 hw_version = device.hw_version,
                 sw_version = device.sw_version,
             )
-            valid_ids.append( (DOMAIN, device.serial) )
+            valid_ids[device.serial] = (DOMAIN, device.serial)
 
         # Remember valid device ids so we can do a cleanup of invalid ones later
         self._valid_device_ids = valid_ids
@@ -331,12 +362,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         cleanup all devices that are no longer in use
         """
         _LOGGER.info(f"Cleanup devices for installation '{self._install_name}'")
+        valid_identifiers = list(self._valid_device_ids.values())
 
         dr = device_registry.async_get(self.hass)
-        known_devices = device_registry.async_entries_for_config_entry(dr, config_entry.entry_id)
+        registered_devices = device_registry.async_entries_for_config_entry(dr, config_entry.entry_id)
 
-        for device in known_devices:
-            if all(id not in self._valid_device_ids for id in device.identifiers):
+        for device in registered_devices:
+            if all(id not in valid_identifiers for id in device.identifiers):
                 _LOGGER.info(f"Remove obsolete device {next(iter(device.identifiers))} from installation '{self._install_name}'")
                 dr.async_remove_device(device.id)
 
@@ -348,10 +380,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         _LOGGER.info(f"Cleanup entities for installation '{self._install_name}'")
 
         er = entity_registry.async_get(self.hass)
-        known_entities = entity_registry.async_entries_for_config_entry(er, config_entry.entry_id)
+        registered_entities = entity_registry.async_entries_for_config_entry(er, config_entry.entry_id)
 
-        for entity in known_entities:
-            # Retrieve all valid ids matching the platform of this known_entity.
+        for entity in registered_entities:
+            # Retrieve all valid ids matching the platform of this registered entity.
             # Note that platform and domain are mixed up in entity_registry
             valid_unique_ids = self._valid_unique_ids.get(entity.domain, [])
 
@@ -393,6 +425,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         # If this was the first fetch, then make sure all next ones use the correct fetch order (web or cache)
         self._fetch_order = DabPumpsCoordinatorFetchOrder.NEXT
 
+        # Periodically detect changes in the installation and trigger reload of the integration if needed.
+        await self._async_detect_changes()
+        
         # Periodically persist the cache
         await self._cache.async_write()
 
@@ -453,10 +488,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
         
     async def _async_detect_data(self):
-        warnings = []
         error = None
         ts_start = datetime.now()
-        fetch_web_done = False
 
         for retry,fetch_method in enumerate(self._fetch_order):
             try:
@@ -499,7 +532,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
         return False
     
-        
+
     async def _async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
         error = None
         ts_start = datetime.now()
@@ -747,6 +780,38 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 
         # If no exception was thrown, then the fetch method succeeded.
         # Result is in self._api.install_map.
+
+
+    async def _async_detect_changes(self):
+        """Detect changes in the installation and trigger a integration reload if needed"""
+
+        # Deliberately delay reload checks to prevent enless reloads if something is wrong
+        if (datetime.now() - self._reload_time).total_seconds() < self._reload_delay:
+            return
+
+        # Detect any changes
+        reload = await self._async_detect_install_changes()
+        if reload:
+            self._reload_count += 1
+            self.hass.config_entries.async_schedule_reload(self._config_entry_id)
+
+        
+    async def _async_detect_install_changes(self)  -> bool:
+        """
+        Detect any new devices. Returns True if a reload needs to be triggered else False
+        """
+
+        # Get list of device serials in HA device registry and as retrieved from Api
+        old_serials: set[str] = set(self._valid_device_ids.keys())
+        api_serials: set[str] = set([ d.serial for d in self._api.device_map.values() if d.install_id == self._install_id ])
+        new_serials: set[str] = api_serials.difference(old_serials)
+
+        for new_serial in new_serials:
+            new_device = self._api.device_map.get(new_serial)
+            _LOGGER.info(f"Found newly added device {new_device.serial} ({new_device.name}) for installation '{self._install_name}'. Trigger reload of integration.")
+            return True
+        
+        return False
 
 
     async def async_get_diagnostics(self) -> dict[str, Any]:

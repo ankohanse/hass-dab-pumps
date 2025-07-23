@@ -59,7 +59,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     _LOGGER.info(f"Setup config entry for installation '{install_name}' ({install_id})")
     
     # Get an instance of the DabPumpsCoordinator for this install_id
-    coordinator: DabPumpsCoordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
+    # We force to create a fresh instance, otherwise data updates don't happen if this setup_entry was triggered by a reload
+    coordinator: DabPumpsCoordinator = DabPumpsCoordinatorFactory.create(hass, config_entry, force_create=True)
     
     # Fetch initial data so we have data when entities subscribe
     #
@@ -77,8 +78,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     # Cleanup entities and devices
     await coordinator.async_cleanup_entities(config_entry)
     await coordinator.async_cleanup_devices(config_entry)
-    
-    # Reload entry when it is updated
+
+    # Reload entry when it is updated via config flow
     config_entry.async_on_unload(config_entry.add_update_listener(_async_update_listener))
     
     return True
