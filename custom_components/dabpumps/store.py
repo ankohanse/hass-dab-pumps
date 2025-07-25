@@ -198,22 +198,23 @@ class DabPumpsStore(Store[dict]):
             self._last_read = datetime.now()
 
 
-    async def async_write(self):
+    async def async_write(self, force: bool = False):
         """
         Save the data into the persisted storage file
         """
         try:
-            if len(self._store_data) == 0:
-                # Nothing to persist
-                return 
+            if not force:
+                if len(self._store_data) == 0:
+                    # Nothing to persist
+                    return 
+                
+                if (self._last_change <= self._last_write):
+                    # No changes since last write
+                    return
             
-            if (self._last_change <= self._last_write):
-                # No changes since last write
-                return
-        
-            if (datetime.now() - self._last_write).total_seconds() < self._write_period:
-                # Not long enough since last write
-                return        
+                if (datetime.now() - self._last_write).total_seconds() < self._write_period:
+                    # Not long enough since last write
+                    return        
 
             _LOGGER.info(f"Write persisted {self.key}")
             await super().async_save(self._store_data)

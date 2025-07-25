@@ -141,7 +141,6 @@ class DabPumpsCoordinatorFactory:
             
         # already created?
         coordinator = hass.data[DOMAIN][COORDINATOR].get(install_id, None)
-
         if coordinator:
             # check for an active reload and copy reload settings when creating a new coordinator
             reload_count = coordinator.reload_count
@@ -793,6 +792,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         reload = await self._async_detect_install_changes()
         if reload:
             self._reload_count += 1
+            await self._cache.async_write(force=True)     # Force a write so after reload we read up-to-date cache
+
             self.hass.config_entries.async_schedule_reload(self._config_entry_id)
 
         
