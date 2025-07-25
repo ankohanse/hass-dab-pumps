@@ -271,11 +271,6 @@ class DabPumpsEntity(Entity):
         self._attr_unit = self._convert_to_unit()
 
 
-    def _get_string(self, str):
-        # return 'translated' string or original string if not found
-        return self._coordinator.string_map.get(str, str)
-
-
     def _convert_to_unit(self):
         """Convert from DAB Pumps units to Home Assistant units"""
         match self._params.unit:

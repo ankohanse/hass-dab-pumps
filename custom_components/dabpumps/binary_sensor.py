@@ -112,7 +112,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         self._attr_unique_id = unique_id
         
         self._attr_has_entity_name = True
-        self._attr_name = self._get_string(status.key)
+        self._attr_name = status.name
         self._name = status.key
         
         self._attr_device_class = self._get_device_class()

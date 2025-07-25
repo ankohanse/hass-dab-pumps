@@ -284,11 +284,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
 
     @property
-    def string_map(self) -> dict[str, str]:
-        return self._api.string_map
-
-
-    @property
     def user_role(self) -> str:
         return self._api.user_role[0] # only use the first character
     
