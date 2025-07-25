@@ -285,7 +285,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     @property
     def user_role(self) -> str:
-        return self._api.user_role[0] # only use the first character
+        # Return the user role for this install_id
+        # Note: we only use the first character
+        if self._install_id in self._api.install_map:
+            return self._api.install_map[self._install_id].role[0]
+        else:
+            return self._api.user_role[0]
     
 
     @property
