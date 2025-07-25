@@ -10,6 +10,19 @@ from homeassistant.components.sensor import SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.const import Platform
+from homeassistant.const import PERCENTAGE
+from homeassistant.const import REVOLUTIONS_PER_MINUTE
+from homeassistant.const import UnitOfInformation
+from homeassistant.const import UnitOfElectricCurrent
+from homeassistant.const import UnitOfElectricPotential
+from homeassistant.const import UnitOfEnergy
+from homeassistant.const import UnitOfLength
+from homeassistant.const import UnitOfPower
+from homeassistant.const import UnitOfPressure
+from homeassistant.const import UnitOfVolume
+from homeassistant.const import UnitOfVolumeFlowRate
+from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTime
 from homeassistant.core import callback
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
@@ -266,34 +279,34 @@ class DabPumpsEntity(Entity):
     def _convert_to_unit(self):
         """Convert from DAB Pumps units to Home Assistant units"""
         match self._params.unit:
-            case '°C':          return '°C' 
-            case '°F':          return '°F'
-            case 'bar':         return 'bar'
-            case 'psi':         return 'psi'
-            case 'mc':          return 'm³'
-            case 'l':           return 'L'
-            case 'l/min':       return 'L/min'
-            case 'gall':        return 'gal'
-            case 'gall/min':    return 'gal/min'
-            case 'gpm':         return 'gal/min'
-            case 'cm':          return 'cm'
-            case 'inch':        return 'in'
-            case 'ms':          return 'ms'
-            case 's':           return 's'
-            case 'secondi':     return 's'
-            case 'min':         return 'min'
-            case 'h':           return 'h'
-            case 'rpm':         return 'rpm'
-            case 'B':           return 'B'
-            case 'kB':          return 'kB'
-            case 'KB':          return 'kB'
-            case 'MByte':       return 'MB'
-            case '%':           return '%'
-            case 'V':           return 'V'
-            case 'A':           return 'A'
-            case 'W':           return 'W'
-            case 'kW':          return 'kW'
-            case 'kWh':         return 'kWh'
+            case '°C':          return UnitOfTemperature.CELSIUS
+            case '°F':          return UnitOfTemperature.FAHRENHEIT
+            case 'bar':         return UnitOfPressure.BAR
+            case 'psi':         return UnitOfPressure.PSI
+            case 'mc':          return UnitOfVolume.CUBIC_METERS
+            case 'l':           return UnitOfVolume.LITERS
+            case 'l/min':       return UnitOfVolumeFlowRate.LITERS_PER_MINUTE
+            case 'gall':        return UnitOfVolume.GALLONS
+            case 'gall/min':    return UnitOfVolumeFlowRate.GALLONS_PER_MINUTE
+            case 'gpm':         return UnitOfVolumeFlowRate.GALLONS_PER_MINUTE
+            case 'cm':          return UnitOfLength.CENTIMETERS
+            case 'inch':        return UnitOfLength.INCHES
+            case 'ms':          return UnitOfTime.MILLISECONDS
+            case 's':           return UnitOfTime.SECONDS
+            case 'secondi':     return UnitOfTime.SECONDS
+            case 'min':         return UnitOfTime.MINUTES
+            case 'h':           return UnitOfTime.HOURS
+            case 'rpm':         return REVOLUTIONS_PER_MINUTE
+            case 'B':           return UnitOfInformation.BYTES
+            case 'kB':          return UnitOfInformation.KILOBYTES
+            case 'KB':          return UnitOfInformation.KILOBYTES
+            case 'MByte':       return UnitOfInformation.MEGABYTES
+            case '%':           return PERCENTAGE
+            case 'V':           return UnitOfElectricPotential.VOLT
+            case 'A':           return UnitOfElectricCurrent.AMPERE
+            case 'W':           return UnitOfPower.WATT
+            case 'kW':          return UnitOfPower.KILO_WATT
+            case 'kWh':         return UnitOfEnergy.KILO_WATT_HOUR
             case 'Address':     return None
             case 'SW. Vers.':   return None
             case '':            return None
@@ -422,7 +435,7 @@ class DabPumpsEntity(Entity):
             return None
         
         # Return StateClass=None for diagnostics kind of parameters
-        groups_none = ['Modbus', 'Extra Comfort']
+        groups_none = ['Modbus']
         if self._params.group in groups_none:
             return None
         
