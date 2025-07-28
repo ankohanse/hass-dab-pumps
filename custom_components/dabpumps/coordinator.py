@@ -506,7 +506,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 # - installation details and devices
                 # - additional device details
                 # - device configurations
-                await self._async_detect_installations(fetch_method, ignore_exception=True)
+                await self._async_detect_installations(fetch_method)
                 await self._async_detect_install_details(fetch_method)
                 await self._async_detect_devices_details(fetch_method)
                 await self._async_detect_devices_configs(fetch_method)
@@ -617,19 +617,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
             # Not yet expired
             return
-        
-        match fetch_method:
-            case DabPumpsCoordinatorFetch.WEB:
-                raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
-                self._cache.set(context, raw)
-                self._fetch_ts[context] = datetime.now()
 
-            case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context, {})
-                await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
+        try:        
+            match fetch_method:
+                case DabPumpsCoordinatorFetch.WEB:
+                    raw = await self._api.async_fetch_install_details(self._install_id, ret=DabPumpsRet.RAW)
+                    self._cache.set(context, raw)
+                    self._fetch_ts[context] = datetime.now()
 
-        # If no exception was thrown, then the fetch method succeeded.
-        # Result is in self._api.device_map.
+                case DabPumpsCoordinatorFetch.CACHE:
+                    raw = self._cache.get(context, {})
+                    await self._api.async_fetch_install_details(self._install_id, raw=raw, ret=DabPumpsRet.NONE)
+
+            # If no exception was thrown, then the fetch method succeeded.
+            # Result is in self._api.device_map.
+
+        except Exception as e:
+            # Ignore issues if this is just a periodic update
+            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]:
+                _LOGGER.info(f"{e}")
+            else:
+                raise e from None
 
 
     async def _async_detect_devices_details(self, fetch_method: DabPumpsCoordinatorFetch):
@@ -649,19 +657,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
             # Not yet expired
             return
-        
-        match fetch_method:
-            case DabPumpsCoordinatorFetch.WEB:
-                raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
-                self._cache.set(context, raw)
-                self._fetch_ts[context] = datetime.now()
 
-            case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context, {})
-                await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
+        try:        
+            match fetch_method:
+                case DabPumpsCoordinatorFetch.WEB:
+                    raw = await self._api.async_fetch_device_details(device_serial, ret=DabPumpsRet.RAW)
+                    self._cache.set(context, raw)
+                    self._fetch_ts[context] = datetime.now()
 
-        # If no exception was thrown, then the fetch method succeeded.
-        # Result is in self._api.device_map.
+                case DabPumpsCoordinatorFetch.CACHE:
+                    raw = self._cache.get(context, {})
+                    await self._api.async_fetch_device_details(device_serial, raw=raw, ret=DabPumpsRet.NONE)
+
+            # If no exception was thrown, then the fetch method succeeded.
+            # Result is in self._api.device_map.
+
+        except Exception as e:
+            # Ignore issues if this is just a periodic update
+            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]:
+                _LOGGER.info(f"{e}")
+            else:
+                raise e from None
 
 
     async def _async_detect_devices_configs(self, fetch_method: DabPumpsCoordinatorFetch):
@@ -685,19 +701,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
             # Not yet expired
             return
-        
-        match fetch_method:
-            case DabPumpsCoordinatorFetch.WEB:
-                raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
-                self._cache.set(context, raw)
-                self._fetch_ts[context] = datetime.now()
 
-            case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context, {})
-                await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
-        
-        # If no exception was thrown, then the fetch method succeeded.
-        # Result is in self._api.config_map.
+        try:        
+            match fetch_method:
+                case DabPumpsCoordinatorFetch.WEB:
+                    raw = await self._api.async_fetch_device_config(config_id, ret=DabPumpsRet.RAW)
+                    self._cache.set(context, raw)
+                    self._fetch_ts[context] = datetime.now()
+
+                case DabPumpsCoordinatorFetch.CACHE:
+                    raw = self._cache.get(context, {})
+                    await self._api.async_fetch_device_config(config_id, raw=raw, ret=DabPumpsRet.NONE)
+            
+            # If no exception was thrown, then the fetch method succeeded.
+            # Result is in self._api.config_map.
+
+        except Exception as e:
+            # Ignore issues if this is just a periodic update
+            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]:
+                _LOGGER.info(f"{e}")
+            else:
+                raise e from None
 
 
     async def _async_detect_devices_statusses(self, fetch_method: DabPumpsCoordinatorFetch):
@@ -714,19 +738,27 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         context = f"statusses {device_serial}"
 
-        match fetch_method:
-            case DabPumpsCoordinatorFetch.WEB:
-                raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
-                self._cache.set(context, raw)
-                self._fetch_ts[context] = datetime.now()
+        try:
+            match fetch_method:
+                case DabPumpsCoordinatorFetch.WEB:
+                    raw = await self._api.async_fetch_device_statusses(device_serial, ret=DabPumpsRet.RAW)
+                    self._cache.set(context, raw)
+                    self._fetch_ts[context] = datetime.now()
 
-            case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context, {})
-                await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
+                case DabPumpsCoordinatorFetch.CACHE:
+                    raw = self._cache.get(context, {})
+                    await self._api.async_fetch_device_statusses(device_serial, raw=raw, ret=DabPumpsRet.NONE)
 
-        # If no exception was thrown, then the fetch method succeeded.
-        # Result is in self._api.status_map.
+            # If no exception was thrown, then the fetch method succeeded.
+            # Result is in self._api.status_map.
 
+        except Exception as e:
+            # Never ignore issues
+            if self._fetch_order in []:
+                _LOGGER.info(f"{e}")
+            else:
+                raise e from None
+            
 
     async def _async_detect_strings(self, fetch_method: DabPumpsCoordinatorFetch):
         """
@@ -738,21 +770,30 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Not yet expired
             return
 
-        match fetch_method:
-            case DabPumpsCoordinatorFetch.WEB:
-                raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
-                self._cache.set(context, raw)
-                self._fetch_ts[context] = datetime.now()
+        try:
+            match fetch_method:
+                case DabPumpsCoordinatorFetch.WEB:
+                    raw = await self._api.async_fetch_strings(self.language, ret=DabPumpsRet.RAW)
+                    self._cache.set(context, raw)
+                    self._fetch_ts[context] = datetime.now()
 
-            case DabPumpsCoordinatorFetch.CACHE:
-                raw = self._cache.get(context, {})
-                await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
+                case DabPumpsCoordinatorFetch.CACHE:
+                    raw = self._cache.get(context, {})
+                    await self._api.async_fetch_strings(self.language, raw=raw, ret=DabPumpsRet.NONE)
+                    
+            # If no exception was thrown, then the fetch method succeeded.
+            # Result is in self._api.string_map.
+
+        except Exception as e:
+            # Ignore issues if this is just a periodic update
+            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]:
+                _LOGGER.info(f"{e}")
+            else:
+                raise e from None
                 
-        # If no exception was thrown, then the fetch method succeeded.
-        # Result is in self._api.string_map.
 
 
-    async def _async_detect_installations(self, fetch_method: DabPumpsCoordinatorFetch, ignore_exception=False):
+    async def _async_detect_installations(self, fetch_method: DabPumpsCoordinatorFetch):
         """
         Attempt to refresh the list of installations (once an hour, just for diagnostocs)
         """
@@ -773,12 +814,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                     raw = self._cache.get(context, {})
                     await self._api.async_fetch_install_list(raw=raw, ret=DabPumpsRet.NONE)
 
+            # If no exception was thrown, then the fetch method succeeded.
+            # Result is in self._api.install_map.
+
         except Exception as e:
-            if not ignore_exception:
+            # Ignore issues if this is just a periodic update
+            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.INIT, DabPumpsCoordinatorFetchOrder.NEXT]:
+                _LOGGER.info(f"{e}")
+            else:
                 raise e from None
-                
-        # If no exception was thrown, then the fetch method succeeded.
-        # Result is in self._api.install_map.
 
 
     async def _async_detect_changes(self):
