@@ -25,7 +25,7 @@ class DabPumpsStore(Store[dict]):
     # Keep track of each single Store instance per store_key
     _instances = {}
     
-    _STORAGE_VERSION_MAJOR = 2
+    _STORAGE_VERSION_MAJOR = 3
     _STORAGE_VERSION_MINOR = 0
 
     def __new__(cls, hass, store_key: str, *args, **kwargs):
@@ -91,27 +91,16 @@ class DabPumpsStore(Store[dict]):
 
     async def _async_migrate_func(self, old_major_version, old_minor_version, old_data):
         """
-        Migrate the history store data
+        Migrate the store data
         """
-        if old_major_version <= 1:
-            # version 1 had a cache per installation. We flatten that structure for version 2
-            data = {}
-            for install_id in old_data.keys():
-                _LOGGER.debug(f"Migrate {install_id} (flatten)")
-
-                if self._store_key in old_data[install_id]:
-                    _LOGGER.debug(f"Migrate {install_id} - {self._store_key} (flatten)")
-                    store_dict = old_data[install_id][self._store_key]
-
-                    for k,v in store_dict.items():
-                        _LOGGER.debug(f"Migrate {install_id} - {self._store_key} - {k} (copy)")
-                        data[k] = v
+        if old_major_version <= 2:
+            # version 1 and 2 contained Dab Pumps raw http responses.
+            # version 3 has no direct relation to this, just remove everything from the cache
+            return {}
 
         else: 
-            # version 2 is the current version. No migrate needed
-            data = old_data
-
-        return data
+            # version 3 is the current version. No migrate needed
+            return old_data
 
 
     async def _async_migrate_file(self):
@@ -122,49 +111,9 @@ class DabPumpsStore(Store[dict]):
             if self._migrate_file_checked:
                 return
 
-            if self._store_key != STORE_KEY_CACHE:
+            if self._store_key == STORE_KEY_CACHE:
                 # This migrate is only applicable for the 'cache' store
-                return
-
-            async with self._migrate_file_lock:
-
-                key_old = DabPumpsStore.make_key("coordinator")
-                key_new = self.key
-                store_name_old = self.hass.config.path(STORAGE_DIR, key_old)
-                store_name_new = self.hass.config.path(STORAGE_DIR, key_new)
-
-                if not os.path.isfile(store_name_old):
-                    # No old file so nothing to migrate
-                    return
-
-                if not os.path.isfile(store_name_new):
-                    _LOGGER.info(f"Migrate legacy {key_old} storage into {key_new}")
-
-                    # Try to load using the old key
-                    try:
-                        self.set_key(key_old)
-                        self._store_data = await super().async_load()
-                    except Exception as e:
-                        _LOGGER.debug(f"Exception: {e}")
-                    finally:
-                        self.set_key(key_new)
-
-                    # Save using the new key and delete old file
-                    if self._store_data:
-                        await super().async_save(self._store_data)
-
-                else:
-                    # Don't delete legacy file yet. We will wait until next release to do this...
-                    #
-                    # _LOGGER.info(f"Remove legacy {key_old}")
-                    # try:
-                    #     self.set_key(key_old)
-                    #     await super().async_remove()
-                    # except Exception as e:
-                    #     _LOGGER.debug(f"Exception: {e}")
-                    # finally:
-                    #     self.set_key(key_new)
-                    pass
+                await self._async_migrate_cache_file()
 
         except Exception as ex:
             _LOGGER.warning(f"Exception while migrating persisted {self.key}: {ex}")
@@ -175,15 +124,42 @@ class DabPumpsStore(Store[dict]):
             self._migrate_file_checked = True
 
 
+    async def _async_migrate_cache_file(self):
+        """
+        Remove legacy dabpumps.coordinator file if needed
+        """    
+        async with self._migrate_file_lock:
+
+            key_old = DabPumpsStore.make_key("coordinator")
+            key_new = self.key
+            store_name_old = self.hass.config.path(STORAGE_DIR, key_old)
+            store_name_new = self.hass.config.path(STORAGE_DIR, key_new)
+
+            if not os.path.isfile(store_name_old):
+                # No old file to remove
+                return
+
+            _LOGGER.info(f"Remove legacy {key_old}")
+            try:
+                self.set_key(key_old)
+                await super().async_remove()
+            except Exception as e:
+                _LOGGER.debug(f"Exception: {e}")
+            finally:
+                self.set_key(key_new)
+
+
+
     async def async_read(self):
         """
         Load the persisted storage file and return its data
         """
 
+        # Migrate from old dabpumps.coordinator file if needed
         await self._async_migrate_file()
 
         try:
-            # Migrate from old dabpumps.coordinator file if needed
+            # Persisted file already read?
             if self._last_read > datetime.min:
                 return 
             
