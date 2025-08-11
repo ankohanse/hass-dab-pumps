@@ -44,7 +44,7 @@ MSG_POLLING_INTERVAL = 'polling_interval'
 MSG_LANGUAGE = 'language'
 
 STORE_KEY_CACHE = "cache"
-CACHE_WRITE_PERIOD = 300 # seconds
+STORE_WRITE_PERIOD_CACHE = 300 # seconds
 
 DIAGNOSTICS_REDACT = { CONF_PASSWORD, 'client_secret' }
 

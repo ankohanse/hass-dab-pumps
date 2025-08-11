@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import logging
 import os
 
@@ -231,7 +232,12 @@ class DabPumpsStore(Store[dict]):
         Get an item from the store data
         """
         _LOGGER.debug(f"Try fetch from {self.key}: {item_key}")
-        return self._store_data.get(item_key, item_default)
+        item_val = self._store_data.get(item_key, item_default)
+
+        if isinstance(item_val, dict):
+            item_val.pop("ts", None)
+
+        return item_val
     
 
     def set(self, item_key: str, item_val: Any):
@@ -239,9 +245,12 @@ class DabPumpsStore(Store[dict]):
         Set an item into the store data
         """
         if isinstance(item_val, dict):
-            item_val["ts"] = datetime.now(timezone.utc)
+            store_val = copy.deepcopy(item_val)
+            store_val["ts"] = datetime.now(timezone.utc)
+        else:
+            store_val = item_val
 
-        self._store_data[item_key] = item_val
+        self._store_data[item_key] = store_val
         self._last_change = datetime.now()
 
 
@@ -250,5 +259,3 @@ class DabPumpsStore(Store[dict]):
         Return all data items. Used for diagnostics
         """
         return [ (k,v) for k,v in self._store_data.items() ]
-
-    

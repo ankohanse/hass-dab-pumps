@@ -94,13 +94,13 @@ class DabPumpsEntityHelper:
         
         _LOGGER.debug(f"Create {target_platform} entities for installation '{self._coordinator.install_name}'")
 
-        # Iterate all statusses to create sensor entities
+        # Iterate all statuses to create sensor entities
         entities = []
         valid_unique_ids: list[str] = []
 
         for object_id, status in status_map.items():
 
-            # skip statusses that are not associated with a device in this installation
+            # skip statuses that are not associated with a device in this installation
             device = device_map.get(status.serial, None)
             if not device or device.install_id != self._coordinator.install_id:
                 continue
@@ -114,7 +114,7 @@ class DabPumpsEntityHelper:
                 continue
 
             if not self._is_entity_whitelisted(params):
-                # Some statusses (error1...error64) are deliberately skipped
+                # Some statuses (error1...error64) are deliberately skipped
                 continue
             
             platform = self._get_entity_platform(params)
