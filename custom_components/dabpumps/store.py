@@ -1,8 +1,8 @@
 import asyncio
-import copy
 import logging
 import os
 
+from contextlib import suppress
 from datetime import datetime, timezone
 from typing import Any
 
@@ -131,23 +131,17 @@ class DabPumpsStore(Store[dict]):
         async with self._migrate_file_lock:
 
             key_old = DabPumpsStore.make_key("coordinator")
-            key_new = self.key
-            store_name_old = self.hass.config.path(STORAGE_DIR, key_old)
-            store_name_new = self.hass.config.path(STORAGE_DIR, key_new)
+            path_old = self.hass.config.path(STORAGE_DIR, key_old)
 
-            if not os.path.isfile(store_name_old):
-                # No old file to remove
-                return
-
-            _LOGGER.info(f"Remove legacy {key_old}")
             try:
-                self.set_key(key_old)
-                await super().async_remove()
+                if os.path.isfile(path_old):
+                    _LOGGER.info(f"Remove legacy {key_old}")
+
+                    with suppress(FileNotFoundError):
+                        await self.hass.async_add_executor_job(os.unlink, path_old)
+
             except Exception as e:
                 _LOGGER.debug(f"Exception: {e}")
-            finally:
-                self.set_key(key_new)
-
 
 
     async def async_read(self):
@@ -208,30 +202,29 @@ class DabPumpsStore(Store[dict]):
         Get an item from the store data
         """
         _LOGGER.debug(f"Try fetch from {self.key}: {item_key}")
-        item_val = self._store_data.get(item_key, item_default)
-
-        if isinstance(item_val, dict):
-            item_val.pop("ts", None)
-
-        return item_val
+        return self._store_data.get(item_key, item_default)
     
 
     def set(self, item_key: str, item_val: Any):
         """
         Set an item into the store data
         """
-        if isinstance(item_val, dict):
-            store_val = copy.deepcopy(item_val)
-            store_val["ts"] = datetime.now(timezone.utc)
-        else:
-            store_val = item_val
-
-        self._store_data[item_key] = store_val
+        self._store_data[item_key] = item_val
         self._last_change = datetime.now()
 
 
-    def items(self):
+    @property
+    def diag_data(self):
         """
-        Return all data items. Used for diagnostics
+        Return cache properties. Used for diagnostics
         """
-        return [ (k,v) for k,v in self._store_data.items() ]
+        return {
+            "version": self.version,
+            "minor_version": self.minor_version,
+            "key": self.key,
+            "last_read": self._last_read,
+            "last_write": self._last_write,
+            "last_change": self._last_change,
+            "data": self._store_data,
+        }
+    
