@@ -803,8 +803,57 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             raise Exception(f"Not all data found in {self._cache.key}")
 
 
-    async def async_get_diagnostics(self) -> dict[str, Any]:
+    def _update_statistics(self, retries: int|None = None, duration: timedelta|None = None, fetch: DabPumpsCoordinatorFetch|None = None):
+        """
+        Update internal counters used for diagnostics
+        """
+        if retries is not None:
+            if retries in self._diag_retries:
+                self._diag_retries[retries] += 1
+            else:
+                self._diag_retries[retries] = 1
+            
+        if duration is not None:
+            duration = round(duration.total_seconds(), 0)
+            if duration not in self._diag_durations:
+                self._diag_durations[duration] = 1
+            else:
+                self._diag_durations[duration] += 1
 
+        if fetch is not None:
+            if fetch.name not in self._diag_fetch:
+                self._diag_fetch[fetch.name] = 1
+            else:
+                self._diag_fetch[fetch.name] += 1
+
+
+    def _diag_api_handler(self, context, item:DabPumpsHistoryItem, detail:DabPumpsHistoryDetail, data:dict):
+        """
+        Handle diagnostics updates from the api
+        """
+
+        # Call counters
+        if context in self._diag_api_counters:
+            self._diag_api_counters[context] += 1
+        else:
+            self._diag_api_counters[context] = 1
+
+        # Call history
+        self._diag_api_history.append(item)
+        while len(self._diag_api_history) > 64:
+            self._diag_api_history.pop(0)
+
+        # Call details
+        self._diag_api_details[context] = detail
+
+        # Api data
+        self._diag_api_data = self._diag_api_data | data
+
+
+    async def async_get_diagnostics(self) -> dict[str, Any]:
+        """
+        Get all diagnostics values
+        """
         retries_total = sum(self._diag_retries.values()) or 1
         retries_counter = dict(sorted(self._diag_retries.items()))
         retries_percent = { key: round(100.0 * n / retries_total, 2) for key,n in retries_counter.items() }
@@ -835,10 +884,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             },
             "data": {
                 "install_id": self._install_id,
-                "install_map": self._diag_to_dict(self._install_map),
-                "device_map": self._diag_to_dict(self._device_map),
-                "config_map": self._diag_to_dict(self._config_map),
-                "status_map": self._diag_to_dict(self._status_map),
+                "install_map": self._install_map,
+                "device_map": self._device_map,
+                "config_map": self._config_map,
+                "status_map": self._status_map,
                 "user_name": self.user_name,
                 "user_role": self.user_role,
                 "language": self.language,
@@ -851,7 +900,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     async def async_get_diagnostics_for_cache(self) -> dict[str, Any]:
 
-        return self._diag_to_dict(self._cache.diag_data)
+        return self._cache.diag_data
     
 
     async def async_get_diagnostics_for_api(self) -> dict[str, Any]:
@@ -861,127 +910,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         api_calls_percent = { key: round(100.0 * n / api_calls_total, 2) for key, n in self._diag_api_counters.items() }
 
         return {
-            "data": self._diag_to_dict(self._diag_api_data),
+            "data": self._diag_api_data,
             "calls": {
                 "counter": api_calls_counter,
                 "percent": api_calls_percent,
             },                
-            "history": self._diag_to_dict(self._diag_api_history, dict_factory=DabPumpsDictFactory.exclude_none_values),
-            "details": self._diag_to_dict(self._diag_api_details, dict_factory=DabPumpsDictFactory.exclude_none_values),
+            "history": self._diag_api_history,
+            "details": self._diag_api_details,
         }
     
-
-    def _update_statistics(self, retries: int|None = None, duration: timedelta|None = None, fetch: DabPumpsCoordinatorFetch|None = None):
-        if retries is not None:
-            if retries in self._diag_retries:
-                self._diag_retries[retries] += 1
-            else:
-                self._diag_retries[retries] = 1
-            
-        if duration is not None:
-            duration = round(duration.total_seconds(), 0)
-            if duration not in self._diag_durations:
-                self._diag_durations[duration] = 1
-            else:
-                self._diag_durations[duration] += 1
-
-        if fetch is not None:
-            if fetch.name not in self._diag_fetch:
-                self._diag_fetch[fetch.name] = 1
-            else:
-                self._diag_fetch[fetch.name] += 1
-
-
-    def _diag_api_handler(self, context, item:DabPumpsHistoryItem, detail:DabPumpsHistoryDetail, data:dict):
-        """Handle diagnostics updates from the api"""
-
-        # Call counters
-        if context in self._diag_api_counters:
-            self._diag_api_counters[context] += 1
-        else:
-            self._diag_api_counters[context] = 1
-
-        # Call history
-        self._diag_api_history.append(item)
-        while len(self._diag_api_history) > 64:
-            self._diag_api_history.pop(0)
-
-        # Call details
-        self._diag_api_details[context] = detail
-
-        # Api data
-        self._diag_api_data = self._diag_api_data | data
-
-
-    def _diag_to_dict(self, obj: Any, dict_factory=dict) -> Any:
-        """
-        Recursive to dictionary handler that is aware of dataclasses and MultiDict proxies at any level in the data structure
-        """
-        try:
-            if is_dataclass(obj):
-                # I'm not using dataclass.asdict() method, because:
-                # - it does not recurse in to the dataclass field values and
-                #   convert them to dicts (using dict_factory).
-
-                # fast path for the common case
-                if dict_factory is dict:
-                    return { f.name: self._diag_to_dict(getattr(obj, f.name), dict) for f in fields(obj) }
-                else:
-                    result = []
-                    for f in fields(obj):
-                        value = self._diag_to_dict(getattr(obj, f.name), dict_factory)
-                        result.append((f.name, value))
-                    return dict_factory(result)
-                
-            elif isinstance(obj, tuple) and hasattr(obj, '_fields'):
-                # obj is a namedtuple.  Recurse into it, but the returned
-                # object is another namedtuple of the same type.  This is
-                # similar to how other list- or tuple-derived classes are
-                # treated (see below), but we just need to create them
-                # differently because a namedtuple's __init__ needs to be
-                # called differently (see bpo-34363).
-
-                # I'm not using namedtuple's _asdict()
-                # method, because:
-                # - it does not recurse in to the namedtuple fields and
-                #   convert them to dicts (using dict_factory).
-                # - I don't actually want to return a dict here.  The main
-                #   use case here is json.dumps, and it handles converting
-                #   namedtuples to lists.  Admittedly we're losing some
-                #   information here when we produce a json list instead of a
-                #   dict.  Note that if we returned dicts here instead of
-                #   namedtuples, we could no longer call asdict() on a data
-                #   structure where a namedtuple was used as a dict key.
-
-                return type(obj)( *[self._diag_to_dict(v, dict_factory) for v in obj] )
-            
-            elif isinstance(obj, (list, tuple)):
-                # Assume we can create an object of this type by passing in a
-                # generator (which is not true for namedtuples, handled
-                # above).
-                return type(obj)( self._diag_to_dict(v, dict_factory) for v in obj )
-            
-            elif isinstance(obj, dict):
-                if hasattr(type(obj), 'default_factory'):
-                    # obj is a defaultdict, which has a different constructor from
-                    # dict as it requires the default_factory as its first arg.
-                    result = type(obj)(getattr(obj, 'default_factory'))
-                    for k, v in obj.items():
-                        result[self._diag_to_dict(k, dict_factory)] = self._diag_to_dict(v, dict_factory)
-                    return result
-                
-                return type(obj)( (self._diag_to_dict(k, dict_factory), self._diag_to_dict(v, dict_factory)) for k, v in obj.items() )
-            
-            elif isinstance(obj, MultiDict):
-                 return self._diag_to_dict(obj.copy())
-            
-            else:
-                return obj
-            
-        except Exception as ex:
-            return f"Could not serialize type {type(obj)}: {ex}"
-        
-
 
 
 

@@ -2,8 +2,11 @@
 
 import logging
 
-from copy import deepcopy
-from typing import Any
+from dataclasses import fields, is_dataclass
+from datetime import datetime
+from multidict import MultiDict, MultiDictProxy
+from types import MappingProxyType, NoneType
+from typing import Any, Mapping
 
 from homeassistant.components.diagnostics import REDACTED
 from homeassistant.components.diagnostics.util import async_redact_data
@@ -11,18 +14,15 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 
-from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
+from aiodabpumps import (
+    DabPumpsHistoryItem, 
+    DabPumpsHistoryDetail,
+    DabPumpsDictFactory,
 )
 
 from .const import (
-    DOMAIN,
-    NAME,
-    COORDINATOR,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
-    CONF_POLLING_INTERVAL,
     DIAGNOSTICS_REDACT,
 )
 
@@ -37,21 +37,90 @@ _LOGGER = logging.getLogger(__name__)
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: ConfigEntry) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
+
     install_id = config_entry.data[CONF_INSTALL_ID]
     install_name = config_entry.data[CONF_INSTALL_NAME]
     _LOGGER.info(f"Retrieve diagnostics for install {install_name} ({install_id})")
     
     coordinator: DabPumpsCoordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
-    data_coord = await coordinator.async_get_diagnostics()
-    data_cache = await coordinator.async_get_diagnostics_for_cache()
-    data_api   = await coordinator.async_get_diagnostics_for_api()
-
-    return {
+    diagnostics = {
         "config": {
-            "data": async_redact_data(config_entry.data, DIAGNOSTICS_REDACT),
-            "options": async_redact_data(config_entry.options, DIAGNOSTICS_REDACT),
+            "data": config_entry.data,
+            "options": config_entry.options,
         },
-        "coordinator": async_redact_data(data_coord, DIAGNOSTICS_REDACT),
-        "cache": async_redact_data(data_cache, DIAGNOSTICS_REDACT),
-        "api": async_redact_data(data_api, DIAGNOSTICS_REDACT),
+        "coordinator": await coordinator.async_get_diagnostics(),
+        "cache": await coordinator.async_get_diagnostics_for_cache(),
+        "api": await coordinator.async_get_diagnostics_for_api(), 
     }
+
+    # Convert contents to only contain standard structures: int, float, str, list, dict, ...
+    diagnostics_dict = to_dict(diagnostics)
+
+    # Hide passwords etc.
+    return async_redact_data(diagnostics_dict, DIAGNOSTICS_REDACT)
+
+
+# For some specific dataclasses we exclude None values
+DATACLASSES_EXCLUDE_NONE = (DabPumpsHistoryItem, DabPumpsHistoryDetail)
+
+
+def to_dict(obj: Any, dict_factory=dict) -> Any:
+        """
+        Recursive to dictionary handler that is aware of dataclasses, Mapping and MultiDict proxies at any level in the data structure
+        """
+        try:
+            if isinstance(obj, (int,float,str,NoneType)):
+                return obj
+            
+            elif isinstance(obj, datetime):
+                return obj.isoformat()
+            
+            elif is_dataclass(obj):
+                # Not using dataclass.asdict() method, because it does not recurse in to the dataclass field values
+                # and convert the values themselves to dicts (using dict_factory).
+
+                df = dict_factory if not isinstance(obj, DATACLASSES_EXCLUDE_NONE) else DabPumpsDictFactory.exclude_none_values
+
+                result = []
+                for f in fields(obj):
+                    value = to_dict(getattr(obj, f.name), df)
+                    result.append((f.name, value))
+
+                return df(result)
+                
+            elif isinstance(obj, (list,tuple)):
+                if hasattr(obj, '_fields'):
+                    # namedtuple, Standard asdict will not recurse in to the namedtuple fields and convert them to dicts (using dict_factory).
+                    return type(obj)( *[to_dict(v, dict_factory) for v in obj] )
+
+                else:
+                    # standard tuple or a list        
+                    return type(obj)( to_dict(v, dict_factory) for v in obj )
+            
+            elif isinstance(obj, dict):
+                if hasattr(type(obj), 'default_factory'):
+                    # defaultdict has a different constructor from dict
+                    result = type(obj)(getattr(obj, 'default_factory'))
+                else:
+                    result = type(obj)()
+            
+                for k, v in obj.items():
+                    result[k] = to_dict(v, dict_factory)
+                return result
+            
+            elif isinstance(obj, (Mapping, MappingProxyType)):
+                 return to_dict(dict(obj), dict_factory)
+            
+            elif isinstance(obj, (MultiDict, MultiDictProxy)):
+                 return to_dict(obj.copy(), dict_factory)
+            
+            else:
+                return f"{type(obj)} {obj}"
+            
+        except Exception as ex:
+            return f"Could not serialize type {type(obj)}: {ex}"
+        
+
+
+
+
