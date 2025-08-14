@@ -14,16 +14,18 @@ from homeassistant.const import CONF_NAME
 from homeassistant.const import CONF_UNIQUE_ID
 from homeassistant.const import EntityCategory
 from homeassistant.const import Platform
+from homeassistant.const import STATE_ON
+from homeassistant.const import STATE_OFF
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import IntegrationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import async_get
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from datetime import datetime
@@ -75,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.BINARY_SENSOR, DabPumpsBinarySensor, async_add_entities)
 
 
-class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity):
+class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Binary Sensor.
     
@@ -141,6 +143,27 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
     def name(self) -> str:
         """Return the name of the entity."""
         return self._attr_name
+    
+
+    async def async_added_to_hass(self) -> None:
+        """
+        Handle when the entity has been added
+        """
+        await super().async_added_to_hass()
+
+        # Get last data from previous HA run                      
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
+            
+            if last_state.state == STATE_ON:
+                self._attr_is_on = True
+
+            elif last_state.state == STATE_OFF:
+                self._attr_is_on = False
+
+            else: # STATE_UNKNOWN or STATE_UNAVAILABLE
+                pass
     
     
     @callback

@@ -4,7 +4,7 @@ import math
 
 from homeassistant import config_entries
 from homeassistant import exceptions
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import RestoreSensor
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
@@ -64,7 +64,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.SENSOR, DabPumpsSensor, async_add_entities)
 
 
-class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
+class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
     """
     Representation of a DAB Pumps Sensor.
     
@@ -85,7 +85,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         
         self.object_id = object_id                          # Device.serial + status.key
         self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
-        
+
         self._device = device
         self._params = params
         
@@ -127,7 +127,25 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         """Return the name of the entity."""
         return self._attr_name
     
-    
+
+    async def async_added_to_hass(self) -> None:
+        """
+        Handle when the entity has been added
+        """
+        await super().async_added_to_hass()
+
+        # Get last data from previous HA run                      
+        last_attr = await self.async_get_last_sensor_data()
+        if last_attr is not None:
+            try:
+                _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_attr.native_value}")
+
+                self._attr_native_value = last_attr.native_value
+            except:
+                pass
+
+
+
     @callback
     def _handle_coordinator_update(self) -> None:
         """
@@ -149,7 +167,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         """
         Set entity value, unit and icon
         """
-
+                      
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
             attr_val = status.value

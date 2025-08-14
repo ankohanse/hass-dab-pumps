@@ -14,10 +14,10 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import IntegrationError
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import async_get
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from datetime import datetime
@@ -62,7 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.TIME, DabPumpsTime, async_add_entities)
 
 
-class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
+class DabPumpsTime(CoordinatorEntity, RestoreEntity, TimeEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Time Entity.
     
@@ -139,6 +139,25 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         return self._attr_name
         
         
+    async def async_added_to_hass(self) -> None:
+        """
+        Handle when the entity has been added
+        """
+        await super().async_added_to_hass()
+
+        # Get last data from previous HA run                      
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            try:
+                _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
+                
+                # last_state.state is a string in format "hh:mm:ss"
+                self._attr_state = time.fromisoformat(last_state.state)
+                self._attr_native_value = time.fromisoformat(last_state.state)
+            except:
+                pass
+    
+    
     @callback
     def _handle_coordinator_update(self) -> None:
         """

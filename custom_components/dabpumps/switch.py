@@ -19,6 +19,7 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity_registry import async_get
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from homeassistant.const import (
@@ -69,7 +70,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.SWITCH, DabPumpsSwitch, async_add_entities)
 
 
-class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
+class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Switch Entity.
     
@@ -139,6 +140,29 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         return self._attr_name
         
         
+    async def async_added_to_hass(self) -> None:
+        """
+        Handle when the entity has been added
+        """
+        await super().async_added_to_hass()
+
+        # Get last data from previous HA run                      
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
+            
+            if last_state.state == STATE_ON:
+                self._attr_is_on = True
+                self.attr_state = STATE_ON
+
+            elif last_state.state == STATE_OFF:
+                self._attr_is_on = False
+                self.attr_state = STATE_OFF
+    
+            else: # STATE_UNKNOWN or STATE_UNAVAILABLE
+                pass
+
+    
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
