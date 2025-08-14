@@ -119,7 +119,7 @@ class DabPumpsCoordinatorFetchOrder():
 
 class DabPumpsCoordinatorFactory:
     """Factory to help create the Coordinator"""
-    
+
     @staticmethod
     def create(hass: HomeAssistant, config_entry: ConfigEntry, force_create: bool = False):
         """
@@ -327,6 +327,18 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._reload_count = count
         self._reload_delay = min( pow(2,count-1)*COORDINATOR_RELOAD_DELAY, COORDINATOR_RELOAD_DELAY_MAX )
     
+
+    async def async_on_unload(self):
+        """
+        Called when Home Assistant shuts down or config-entry unloads
+        """
+        _LOGGER.info(f"Unload installation '{self._install_name}'")
+
+        # Persist the last statuses
+        await self._cache.async_write(force = True)
+
+        # Do not logout or close the api. Another coordinator/config-entry might still be using it
+
 
     def create_id(self, *args):
         return self._api.create_id(*args)
@@ -739,8 +751,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         reload = await self._async_detect_install_changes()
         if reload:
             self._reload_count += 1
-            await self._cache.async_write(force=True)     # Force a write so after reload we read up-to-date cache
-
             self.hass.config_entries.async_schedule_reload(self._config_entry_id)
 
         
@@ -794,10 +804,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         config_dict = self._cache.get(f"config_map {self.install_id}", {})
         status_dict = self._cache.get(f"status_map {self.install_id}", {})
 
-        self._install_map = { k:DabPumpsInstall(**v) for k,v in install_dict.items() }
-        self._device_map = { k:DabPumpsDevice(**v) for k,v in device_dict.items() }
-        self._config_map = { k:DabPumpsConfig(**v) for k,v in config_dict.items() }
-        self._status_map = { k:DabPumpsStatus(**v) for k,v in status_dict.items() }
+        self._install_map = { k:v if isinstance(v,DabPumpsInstall) else DabPumpsInstall(**v) for k,v in install_dict.items() }
+        self._device_map = { k:v if isinstance(v,DabPumpsDevice) else DabPumpsDevice(**v) for k,v in device_dict.items() }
+        self._config_map = { k:v if isinstance(v,DabPumpsConfig) else DabPumpsConfig(**v) for k,v in config_dict.items() }
+        self._status_map = { k:v if isinstance(v,DabPumpsStatus) else DabPumpsStatus(**v) for k,v in status_dict.items() }
 
         if not self._install_map or not self._device_map or not self._config_map or not self._status_map:
             raise Exception(f"Not all data found in {self._cache.key}")

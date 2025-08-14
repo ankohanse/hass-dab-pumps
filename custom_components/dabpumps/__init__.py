@@ -1,13 +1,17 @@
 """__init__.py: The DAB Pumps integration."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 import logging
 import json
+from typing import Any
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigType
 from homeassistant.const import Platform
+from homeassistant.const import EVENT_HOMEASSISTANT_CLOSE
 from homeassistant.core import HomeAssistant
+from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import config_validation as cv
@@ -81,7 +85,15 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
 
     # Reload entry when it is updated via config flow
     config_entry.async_on_unload(config_entry.add_update_listener(_async_update_listener))
+
+    # Perform coordinator unload actions when Home Assistant shuts down or config-entry unloads
+    @callback
+    async def _async_coordinator_unload(*_: Any) -> None:
+        await coordinator.async_on_unload()
     
+    config_entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_CLOSE, _async_coordinator_unload))
+    config_entry.async_on_unload(_async_coordinator_unload)
+
     return True
 
 
