@@ -781,10 +781,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         await self._cache.async_read()
 
         # Set the updated values
-        self._cache.set(f"install_map {self.user_name}", self._install_map)
-        self._cache.set(f"device_map {self.install_id}", self._device_map)
-        self._cache.set(f"config_map {self.install_id}", self._config_map)
-        self._cache.set(f"status_map {self.install_id}", self._status_map)
+        install_dict = { k:asdict(v) for k,v in self._install_map.items() }
+        device_dict = { k:asdict(v) for k,v in self._device_map.items() }
+        config_dict = { k:asdict(v) for k,v in self._config_map.items() }
+        status_dict = { k:asdict(v) for k,v in self._status_map.items() }
+        
+        self._cache.set(f"install_map {self.user_name}", install_dict )
+        self._cache.set(f"device_map {self.install_id}", device_dict )
+        self._cache.set(f"config_map {self.install_id}", config_dict )
+        self._cache.set(f"status_map {self.install_id}", status_dict )
 
         # Note that async_write will reduce the number of writes if needed.
         await self._cache.async_write()
@@ -804,10 +809,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         config_dict = self._cache.get(f"config_map {self.install_id}", {})
         status_dict = self._cache.get(f"status_map {self.install_id}", {})
 
-        self._install_map = { k:v if isinstance(v,DabPumpsInstall) else DabPumpsInstall(**v) for k,v in install_dict.items() }
-        self._device_map = { k:v if isinstance(v,DabPumpsDevice) else DabPumpsDevice(**v) for k,v in device_dict.items() }
-        self._config_map = { k:v if isinstance(v,DabPumpsConfig) else DabPumpsConfig(**v) for k,v in config_dict.items() }
-        self._status_map = { k:v if isinstance(v,DabPumpsStatus) else DabPumpsStatus(**v) for k,v in status_dict.items() }
+        self._install_map = { k:DabPumpsInstall(**v) for k,v in install_dict.items() }
+        self._device_map = { k:DabPumpsDevice(**v) for k,v in device_dict.items() }
+        self._config_map = { k:DabPumpsConfig(**v) for k,v in config_dict.items() }
+        self._status_map = { k:DabPumpsStatus(**v) for k,v in status_dict.items() }
 
         if not self._install_map or not self._device_map or not self._config_map or not self._status_map:
             raise Exception(f"Not all data found in {self._cache.key}")
