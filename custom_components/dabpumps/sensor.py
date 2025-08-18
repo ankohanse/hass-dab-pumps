@@ -4,7 +4,7 @@ import math
 
 from homeassistant import config_entries
 from homeassistant import exceptions
-from homeassistant.components.sensor import RestoreSensor
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
@@ -40,16 +40,15 @@ from .const import (
     DOMAIN,
     STATUS_VALIDITY_PERIOD,
 )
-
 from .coordinator import (
     DabPumpsCoordinator,
 )
-
 from .entity_base import (
+    DabPumpsEntity,
+)
+from .entity_helper import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
-    DabPumpsEntity,
-    
 )
 
 
@@ -64,7 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.SENSOR, DabPumpsSensor, async_add_entities)
 
 
-class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
+class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Sensor.
     
@@ -78,26 +77,14 @@ class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, params)
+        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
         
         # The unique identifiers for this sensor within Home Assistant
-        unique_id = self._coordinator.create_id(device.name, status.key)
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
         
-        self.object_id = object_id                          # Device.serial + status.key
-        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
-
-        self._device = device
-        self._params = params
-        
-        # update creation-time only attributes
         _LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        self._attr_unique_id = unique_id
-        
-        self._attr_has_entity_name = True
-        self._attr_name = status.name
-        self._name = status.key
-        
+        # update creation-time only attributes
         self._attr_state_class = self.get_sensor_state_class()
         self._attr_entity_category = self.get_entity_category()
 
@@ -110,42 +97,6 @@ class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
         self._update_attributes(status, force=True)
     
     
-    @property
-    def suggested_object_id(self) -> str | None:
-        """Return input for object id."""
-        return self.object_id
-    
-    
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID for use in home assistant."""
-        return self._attr_unique_id
-    
-    
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._attr_name
-    
-
-    async def async_added_to_hass(self) -> None:
-        """
-        Handle when the entity has been added
-        """
-        await super().async_added_to_hass()
-
-        # Get last data from previous HA run                      
-        last_attr = await self.async_get_last_sensor_data()
-        if last_attr is not None:
-            try:
-                _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_attr.native_value}")
-
-                self._attr_native_value = last_attr.native_value
-            except:
-                pass
-
-
-
     @callback
     def _handle_coordinator_update(self) -> None:
         """
@@ -163,11 +114,11 @@ class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
         """
         Set entity value, unit and icon
         """
-                      
+          
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
             attr_val = status.value
@@ -196,11 +147,6 @@ class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
         # additional checks for TOTAL and TOTAL_INCREASING values
         if self._attr_state_class in [SensorStateClass.TOTAL, SensorStateClass.TOTAL_INCREASING]:
 
-            # ignore first update for TOTAL and TOTAL_INCREASING values as the value will have come from persisted cache 
-            # and is almost certainly not the newest value (more strict expiry check then above)
-            if force:
-                attr_val = None
-
             # ignore decreases that are not significant (less than 50% change)
             if self._attr_native_value is not None and \
                attr_val is not None and \
@@ -211,15 +157,16 @@ class DabPumpsSensor(CoordinatorEntity, RestoreSensor, DabPumpsEntity):
                 attr_val = self._attr_native_value
 
         # update value if it has changed
-        if self._attr_native_value != attr_val or force:
+        changed = super()._update_attributes(status, force)
+
+        if force or self._attr_native_value != attr_val:
 
             self._attr_native_value = attr_val
             self._attr_native_unit_of_measurement = attr_unit
             self._attr_suggested_display_precision = attr_precision
             
             self._attr_icon = self.get_icon()
-            return True
+            changed = True
         
-        # No changes
-        return False
+        return changed
     

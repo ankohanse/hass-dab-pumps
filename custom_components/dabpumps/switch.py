@@ -40,22 +40,21 @@ from aiodabpumps import (
     DabPumpsStatus
 )
 
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-
 from .const import (
     DOMAIN,
     SWITCH_VALUES_ON,
     SWITCH_VALUES_OFF,
     STATUS_VALIDITY_PERIOD,
 )
-
+from .coordinator import (
+    DabPumpsCoordinator,
+)
 from .entity_base import (
+    DabPumpsEntity,
+)
+from .entity_helper import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
-    DabPumpsEntity,
-    
 )
 
 
@@ -70,7 +69,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.SWITCH, DabPumpsSwitch, async_add_entities)
 
 
-class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEntity):
+class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Switch Entity.
     
@@ -84,33 +83,20 @@ class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEnt
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, params)
+        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
         
         # Sanity check
         if params.type != 'enum':
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a select entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        unique_id = self._coordinator.create_id(device.name, status.key)
-        
-        self.object_id = object_id                          # Device.serial + status.key
-        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
 
-        self._coordinator = coordinator
-        self._device = device
-        self._params = params
-        self._key = params.key
-        self._dict = { k: v for k,v in params.values.items() }
-
-        # update creation-time only attributes
         _LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        self._attr_unique_id = unique_id
+        # update creation-time only attributes
+        self._dict = { k: v for k,v in params.values.items() }
 
-        self._attr_has_entity_name = True
-        self._attr_name = status.name
-        self._name = status.key
-        
         self._attr_entity_category = self.get_entity_category()
         self._attr_device_class = SwitchDeviceClass.SWITCH
 
@@ -121,47 +107,6 @@ class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEnt
         # Create all value related attributes
         self._update_attributes(status, force=True)
     
-    
-    @property
-    def suggested_object_id(self) -> str | None:
-        """Return input for object id."""
-        return self.object_id
-    
-    
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID for use in home assistant."""
-        return self._attr_unique_id
-    
-    
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._attr_name
-        
-        
-    async def async_added_to_hass(self) -> None:
-        """
-        Handle when the entity has been added
-        """
-        await super().async_added_to_hass()
-
-        # Get last data from previous HA run                      
-        last_state = await self.async_get_last_state()
-        if last_state is not None:
-            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
-            
-            if last_state.state == STATE_ON:
-                self._attr_is_on = True
-                self.attr_state = STATE_ON
-
-            elif last_state.state == STATE_OFF:
-                self._attr_is_on = False
-                self.attr_state = STATE_OFF
-    
-            else: # STATE_UNKNOWN or STATE_UNAVAILABLE
-                pass
-
     
     @callback
     def _handle_coordinator_update(self) -> None:
@@ -178,11 +123,11 @@ class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEnt
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
         """
         Set entity value, unit and icon
         """
-        
+                
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
 
@@ -203,18 +148,18 @@ class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEnt
             attr_state = None
 
         # update value if it has changed
-        if self._attr_is_on != attr_is_on or force:
+        changed = super()._update_attributes(status, force)
+
+        if force or self._attr_is_on != attr_is_on:
 
             self._attr_is_on = attr_is_on
             self._attr_state = attr_state
             self._attr_unit_of_measurement = self.get_unit()
             
             self._attr_icon = self.get_icon()
+            changed = True
             
-            return True
-            
-        # No changes
-        return False
+        return changed
     
     
     async def async_turn_on(self, **kwargs) -> None:
@@ -222,14 +167,15 @@ class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEnt
         Turn the entity on.
         """
 
-        # Pass the status.code and not the translated status.value
-        code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_ON or value in SWITCH_VALUES_ON), None)
-        if code:
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
-            if success:
-                self._attr_is_on = True
-                self._attr_state = STATE_ON
-                self.async_write_ha_state()
+        # Pass the status.code and not just the translated status.value
+        (code,value) = next(( (code,value) for code,value in self._dict.items() if code in SWITCH_VALUES_ON or value in SWITCH_VALUES_ON), None)
+        if code is None:
+            return
+        
+        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code, value=value)
+        if status is not None:
+            self._update_attributes(status, force=True)
+            self.async_write_ha_state()
     
     
     async def async_turn_off(self, **kwargs) -> None:
@@ -237,12 +183,13 @@ class DabPumpsSwitch(CoordinatorEntity, RestoreEntity, SwitchEntity, DabPumpsEnt
         Turn the entity off.
         """
 
-        # Pass the status.code and not the translated status.value
-        code = next((code for code,value in self._dict.items() if code in SWITCH_VALUES_OFF or value in SWITCH_VALUES_OFF), None)
-        if code:
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
-            if success:
-                self._attr_is_on = False
-                self._attr_state = STATE_OFF
-                self.async_write_ha_state()
+        # Pass the status.code and not just the translated status.value
+        (code,value) = next(( (code,value) for code,value in self._dict.items() if code in SWITCH_VALUES_OFF or value in SWITCH_VALUES_OFF), None)
+        if code is None:
+            return
+        
+        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code, value=value)
+        if status is not None:
+            self._update_attributes(status, force=True)
+            self.async_write_ha_state()
     

@@ -47,15 +47,15 @@ from .const import (
     BINARY_SENSOR_VALUES_OFF,
     STATUS_VALIDITY_PERIOD,
 )
-
 from .coordinator import (
     DabPumpsCoordinator,
 )
-
 from .entity_base import (
+    DabPumpsEntity,
+)
+from .entity_helper import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
-    DabPumpsEntity,
 )
 
 
@@ -77,7 +77,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.BINARY_SENSOR, DabPumpsBinarySensor, async_add_entities)
 
 
-class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity, DabPumpsEntity):
+class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Binary Sensor.
     
@@ -90,7 +90,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity,
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, params)
+        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
         
         # Sanity check
         if params.type != 'enum':
@@ -99,24 +99,12 @@ class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity,
         if len(params.values or []) != 2:
             _LOGGER.error(f"Unexpected parameter values ({self._params.values}) for a binary sensor")
             
-        # The unique identifiers for this sensor within Home Assistant
-        unique_id = self._coordinator.create_id(device.name, status.key)
+        # The unique identifier for this sensor within Home Assistant
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Platform . Device.name + status.key
         
-        self.object_id = object_id                          # Device.serial + status.key
-        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
-        
-        self._device = device
-        self._params = params
-        
-        # update creation-time only attributes
         _LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        self._attr_unique_id = unique_id
-        
-        self._attr_has_entity_name = True
-        self._attr_name = status.name
-        self._name = status.key
-        
+        # update creation-time only attributes
         self._attr_device_class = self._get_device_class()
 
         self._attr_device_info = DeviceInfo(
@@ -125,45 +113,6 @@ class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity,
 
         # Create all value related attributes
         self._update_attributes(status, force=True)
-    
-    
-    @property
-    def suggested_object_id(self) -> str | None:
-        """Return input for object id."""
-        return self.object_id
-    
-    
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID for use in home assistant."""
-        return self._attr_unique_id
-    
-    
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._attr_name
-    
-
-    async def async_added_to_hass(self) -> None:
-        """
-        Handle when the entity has been added
-        """
-        await super().async_added_to_hass()
-
-        # Get last data from previous HA run                      
-        last_state = await self.async_get_last_state()
-        if last_state is not None:
-            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
-            
-            if last_state.state == STATE_ON:
-                self._attr_is_on = True
-
-            elif last_state.state == STATE_OFF:
-                self._attr_is_on = False
-
-            else: # STATE_UNKNOWN or STATE_UNAVAILABLE
-                pass
     
     
     @callback
@@ -183,11 +132,11 @@ class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity,
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force: bool = False):
+    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
-
+        
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
         
@@ -202,13 +151,14 @@ class DabPumpsBinarySensor(CoordinatorEntity, RestoreEntity, BinarySensorEntity,
             is_on = None
             
         # update value if it has changed
-        if (self._attr_is_on != is_on) or force:
+        changed = super()._update_attributes(status, force)
+
+        if force or self._attr_is_on != is_on:
             
             self._attr_is_on = is_on
-            return True
+            changed = True
         
-        # No changes
-        return False
+        return changed
     
     
     def _get_device_class(self):

@@ -39,16 +39,15 @@ from .const import (
     DOMAIN,
     STATUS_VALIDITY_PERIOD,
 )
-
 from .coordinator import (
     DabPumpsCoordinator,
 )
-
 from .entity_base import (
+    DabPumpsEntity,
+)
+from .entity_helper import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
-    DabPumpsEntity,
-    
 )
 
 
@@ -63,7 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.NUMBER, DabPumpsNumber, async_add_entities)
 
 
-class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEntity):
+class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Select Entity.
     
@@ -77,21 +76,17 @@ class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEnt
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, params)
+        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
         
         # Sanity check
         if params.type != 'measure':
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a number entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        unique_id = self._coordinator.create_id(device.name, status.key)
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
         
-        self.object_id = object_id                          # Device.serial + status.key
-        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
+        _LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        self._device = device
-        self._params = params
-
         # Prepare attributes
         if self._params.weight and self._params.weight != 1 and self._params.weight != 0:
             # Convert to float
@@ -105,14 +100,6 @@ class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEnt
             attr_step = self.get_number_step()
         
         # update creation-time only attributes
-        _LOGGER.debug(f"Create entity '{self.entity_id}'")
-        
-        self._attr_unique_id = unique_id
-        
-        self._attr_has_entity_name = True
-        self._attr_name = status.name
-        self._name = status.key
-        
         self._attr_mode = NumberMode.BOX
         self._attr_device_class = self.get_number_device_class()
         self._attr_entity_category = self.get_entity_category()
@@ -128,41 +115,6 @@ class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEnt
 
         # Create all value related attributes
         self._update_attributes(status, force=True)
-    
-    
-    @property
-    def suggested_object_id(self) -> str | None:
-        """Return input for object id."""
-        return self.object_id
-    
-    
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID for use in home assistant."""
-        return self._attr_unique_id
-    
-    
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._attr_name
-        
-        
-    async def async_added_to_hass(self) -> None:
-        """
-        Handle when the entity has been added
-        """
-        await super().async_added_to_hass()
-
-        # Get last data from previous HA run                      
-        last_state = await self.async_get_last_state()
-        if last_state is not None:
-            try:
-                _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
-            
-                self._attr_native_value = float(last_state.state)
-            except:
-                pass
     
     
     @callback
@@ -182,11 +134,11 @@ class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEnt
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force: bool = False):
+    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
-
+        
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
             attr_val = status.value
@@ -194,17 +146,16 @@ class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEnt
             attr_val = None
         
         # update value if it has changed
-        if self._attr_native_value != attr_val or force:
+        changed = super()._update_attributes(status, force)
+
+        if force or self._attr_native_value != attr_val:
 
             self._attr_native_value = attr_val
             self._attr_native_unit_of_measurement = self.get_unit()
-            
             self._attr_icon = self.get_icon()
-
-            return True
+            changed = True
         
-        # No changes
-        return False
+        return changed
     
     
     async def async_set_native_value(self, value: float) -> None:
@@ -212,7 +163,7 @@ class DabPumpsNumber(CoordinatorEntity, RestoreEntity, NumberEntity, DabPumpsEnt
         Change the selected value
         """
         
-        success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, value=value)
-        if success:
-            self._attr_native_value = value
+        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, value=value)
+        if status is not None:
+            self._update_attributes(status, force=True)
             self.async_write_ha_state()

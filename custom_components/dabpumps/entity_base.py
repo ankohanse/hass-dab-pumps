@@ -1,15 +1,13 @@
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import logging
-import async_timeout
 
-from datetime import timedelta
-from typing import Any
+from typing import Any, Self
 
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorStateClass
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
-from homeassistant.const import Platform
 from homeassistant.const import PERCENTAGE
 from homeassistant.const import REVOLUTIONS_PER_MINUTE
 from homeassistant.const import UnitOfInformation
@@ -23,254 +21,147 @@ from homeassistant.const import UnitOfVolume
 from homeassistant.const import UnitOfVolumeFlowRate
 from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfTime
-from homeassistant.core import callback
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.entity import Entity
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-
-import homeassistant.helpers.entity_registry as entity_registry
-
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .const import (
-    DOMAIN,
-    PLATFORMS,
-    NAME,
-    CONF_INSTALL_ID,
-    CONF_INSTALL_NAME,
-    CONF_OPTIONS,
-    BINARY_SENSOR_VALUES_ALL,
-    SWITCH_VALUES_ALL,
-    BUTTON_VALUES_ALL,
+    ATTR_STORED_CODE,
+    ATTR_STORED_VALUE,
 )
-
 from .coordinator import (
-    DabPumpsCoordinatorFactory,
-    DabPumpsCoordinator
+    DabPumpsCoordinator,
+)
+from aiodabpumps import (
+    DabPumpsDevice,
+    DabPumpsParams,
+    DabPumpsStatus,
 )
 
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class DabPumpsEntityHelperFactory:
-    
-    @staticmethod
-    def create(hass: HomeAssistant, config_entry: ConfigEntry):
-        """
-        Get entity helper for a config entry.
-        The entry is short lived (only during init) and does not contain state data,
-        therefore no need to cache it in hass.data
-        """
-    
-        # Get an instance of the DabPumpsCoordinator for this install_id
-        coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
-    
-        # Get an instance of our helper
-        return DabPumpsEntityHelper(hass, coordinator)
+@dataclass
+class DabPumpsEntityExtraData(ExtraStoredData):
+    """Object to hold extra stored data."""
+
+    code: str = None
+    value: str = None
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a dict representation of the sensor data."""
+        return {
+            ATTR_STORED_CODE: self.code,
+            ATTR_STORED_VALUE: self.value,
+        }
+
+    @classmethod
+    def from_dict(cls, restored: dict[str, Any]) -> Self | None:
+        """Initialize a stored sensor state from a dict."""
+        return cls(
+            code = restored.get(ATTR_STORED_CODE),
+            value = restored.get(ATTR_STORED_VALUE),
+        )
 
 
-class DabPumpsEntityHelper:
-    """My custom helper to provide common functions."""
-    
-    def __init__(self, hass: HomeAssistant, coordinator: DabPumpsCoordinator):
-        self._coordinator = coordinator
-        self._entity_registry = entity_registry.async_get(hass)
-        
-    
-    async def async_setup_entry(self, target_platform, target_class, async_add_entities: AddEntitiesCallback):
-        """
-        Setting up the adding and updating of sensor and binary_sensor entities
-        """    
-        # Get data from the coordinator
-        (device_map, config_map, status_map) = self._coordinator.data
-        
-        if not device_map or not config_map or not status_map:
-            # If data returns False or is empty, log an error and return
-            _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
-            return
-        
-        other_platforms = [p for p in PLATFORMS if p != target_platform]
-        
-        _LOGGER.debug(f"Create {target_platform} entities for installation '{self._coordinator.install_name}'")
-
-        # Iterate all statuses to create sensor entities
-        entities = []
-        valid_unique_ids: list[str] = []
-
-        for object_id, status in status_map.items():
-
-            # skip statuses that are not associated with a device in this installation
-            device = device_map.get(status.serial, None)
-            if not device or device.install_id != self._coordinator.install_id:
-                continue
-            
-            config = config_map.get(device.config_id, None)
-            if not config:
-                continue
-            
-            params = config.meta_params.get(status.key, None) if config.meta_params else None
-            if not params:
-                continue
-
-            if not self._is_entity_whitelisted(params):
-                # Some statuses (error1...error64) are deliberately skipped
-                continue
-            
-            platform = self._get_entity_platform(params)
-            if platform != target_platform:
-                # This status will be handled via another platform
-                continue
-                
-            # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
-            entity = None                
-            try:
-                entity = target_class(self._coordinator, object_id, device, params, status)
-                entities.append(entity)
-                
-                valid_unique_ids.append(entity.unique_id)
-
-            except Exception as  ex:
-                _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
-
-        # Remember valid unique_ids per platform so we can do an entity cleanup later
-        self._coordinator.set_valid_unique_ids(target_platform, valid_unique_ids)
-
-        # Now add the entities to the entity_registry
-        _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self._coordinator.install_name}'")
-        if entities:
-            async_add_entities(entities)
-    
-    
-    def _is_entity_whitelisted(self, params):
-        """
-        Determine whether an entry is whitelisted and should be added as sensor/binary sensor/number/select/switch
-        Or is blacklistred and should be ignored
-        """
-        
-        # Whitelisted keys that would otherwise be excluded by blacklisted groups below:
-        keys_whitelist = [
-            'RamUsed',                  # group: Debug
-            'RamUsedMax',               # group: Debug
-            'LatestError',              # group: Errors
-            'RF_EraseHistoricalFault',  # group: Errors
-        ]
-
-        # Blacklisted keys that would otherwise be included by whitelisted groups below:
-        keys_blacklist = [
-            'IdentifyDevice',           # group: System Management
-            'Identify',                 # group: Advanced
-            'Reboot',                   # group: Advanced
-            'UpdateSystem',             # group: Advanced
-            'UpdateFirmware',           # group: Firmware Updates
-            'UpdateProgress',           # group: Firmware Updates
-            'PW_ModifyPassword',        # group: Technical Assistance
-        ]
-        
-        groups_whitelist = []
-        groups_blacklist = [
-            'Debug',
-            'ModbusDevice',
-            'Errors'
-        ]
-
-        # First check if entity is allowed to be viewed according to user_role
-        if self._coordinator.user_role not in params.view:
-            return False
-        
-        # Then check individual keys
-        if params.key in keys_whitelist:
-            return True
-        
-        if params.key in keys_blacklist:
-            return False
-        
-        # Then check groups
-        if params.group in groups_whitelist:
-            return True
-
-        if params.group in groups_blacklist:
-            return False
-        
-        # If not blacklisted by any rule above, then it is whitelisted
-        return True
-        
-        
-    def _get_entity_platform(self, params):
-        """
-        Determine what platform an entry should be added into
-        """
-        
-        # Is it a button/switch/select/number config or control entity? 
-        # Needs to have change rights for the user role
-        # And needs to be in group 'Extra Comfort' or be a specific key
-        # that would otherwise be excluded as group
-        keys_config = [
-            'PumpDisable',
-            'RF_EraseHistoricalFault',
-        ]
-        groups_config = [
-            'Extra Comfort',
-            'Setpoint',
-            'System Management',
-        ]
-        is_config = False
-        if self._coordinator.user_role in params.change:
-            if params.key in keys_config:
-                is_config = True
-            elif params.group in groups_config:
-                is_config = True
-        
-        if is_config:
-            if params.type == 'enum':
-                # With exactly 1 possible value that are of 'press' type it becomes a button
-                if len(params.values or []) == 1:
-                    if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
-                        return Platform.BUTTON
-
-                # With exactly 2 possible values that are of ON/OFF type it becomes a switch
-                if len(params.values or []) == 2:
-                    if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
-                        return Platform.SWITCH
-                    
-                # With more values or not of ON/OFF type it becomes a Select
-                return Platform.SELECT
-                
-            # Is it a numeric type?
-            elif params.type == 'measure':
-                if params.unit == 's':
-                    return Platform.TIME
-                else:
-                    return Platform.NUMBER
-        
-        # Only view rights or does not fit in one of the modifyable entities
-        if params.type == 'enum':
-            # Suppress buttons if we only have view rights
-            if len(params.values or []) == 1:
-                if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
-                    return None
-    
-            # Is it a binary sensor?
-            if len(params.values or []) == 2:
-                if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
-                    return Platform.BINARY_SENSOR
-    
-        # Everything else will become a regular sensor
-        return Platform.SENSOR
-    
-
-class DabPumpsEntity(Entity):
+class DabPumpsEntity(RestoreEntity):
     """
     Common funcionality for all DabPumps Entities:
     (DabPumpsSensor, DabPumpsBinarySensor, DabPumpsNumber, DabPumpsSelect, DabPumpsSwitch)
     """
     
-    def __init__(self, coordinator, params):
+    def __init__(self, coordinator: DabPumpsCoordinator, object_id: str, device: DabPumpsDevice, params: DabPumpsParams):
         self._coordinator = coordinator
+        self._device = device
         self._params = params
         self._attr_unit = self._convert_to_unit()
 
+        # The unique identifiers for this sensor within Home Assistant
+        self.object_id = object_id                                                  # Device.serial + params.key
+        self._attr_unique_id = self._coordinator.create_id(device.name, params.key) # Device.name + params.key
+        
+        self._attr_has_entity_name = True
+        self._attr_name = params.name
+        self._name = params.key
 
+        # Attributes to be restored in the next HA run
+        self._status_code: str = None
+        self._status_value: str = None
+
+
+    @property
+    def suggested_object_id(self) -> str | None:
+        """Return input for object id."""
+        return self.object_id
+    
+    
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID for use in home assistant."""
+        return self._attr_unique_id
+    
+    
+    @property
+    def name(self) -> str:
+        """Return the name of the entity."""
+        return self._attr_name
+    
+
+    @property
+    def extra_restore_state_data(self) -> DabPumpsEntityExtraData | None:
+        """
+        Return entity specific state data to be restored on next HA run.
+        """
+        return DabPumpsEntityExtraData(
+            code = self._status_code,
+            value = self._status_value,
+        )
+    
+
+    async def async_added_to_hass(self) -> None:
+        """
+        Handle when the entity has been added
+        """
+        await super().async_added_to_hass()
+
+        # Get last data from previous HA run                      
+        last_state = await self.async_get_last_state()
+        last_extra = await self.async_get_last_extra_data()
+        
+        if last_state and last_extra:
+            # Set entity value from restored data
+            dict_extra = last_extra.as_dict()
+
+            status = DabPumpsStatus(
+                serial = self._device.serial,
+                key = self._params.key,
+                name = self.name,
+                code = dict_extra.get(ATTR_STORED_CODE),
+                value = dict_extra.get(ATTR_STORED_VALUE),
+                unit = self._params.unit,
+                status_ts= datetime.now(timezone.utc),
+                update_ts = None,
+            )
+
+            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code})")
+            self._update_attributes(status, force=True)
+    
+
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
+        """
+        Process any changes in value
+        
+        To be extended by derived entities
+        """
+        changed = False
+
+        if self._status_code != status.code or self._status_value != status.value:
+            self._status_code = status.code
+            self._status_value = status.value
+            changed = True
+
+        return changed
+
+    
     def _convert_to_unit(self):
         """Convert from DAB Pumps units to Home Assistant units"""
         match self._params.unit:

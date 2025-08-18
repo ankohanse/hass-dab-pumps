@@ -38,16 +38,15 @@ from .const import (
     DOMAIN,
     STATUS_VALIDITY_PERIOD,
 )
-
 from .coordinator import (
     DabPumpsCoordinator,
 )
-
 from .entity_base import (
+    DabPumpsEntity,
+)
+from .entity_helper import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
-    DabPumpsEntity,
-    
 )
 
 
@@ -62,7 +61,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     await helper.async_setup_entry(Platform.SELECT, DabPumpsSelect, async_add_entities)
 
 
-class DabPumpsSelect(CoordinatorEntity, RestoreEntity, SelectEntity, DabPumpsEntity):
+class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Select Entity.
     
@@ -76,32 +75,20 @@ class DabPumpsSelect(CoordinatorEntity, RestoreEntity, SelectEntity, DabPumpsEnt
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, params)
+        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
         
         # Sanity check
         if params.type != 'enum':
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a select entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        unique_id = self._coordinator.create_id(device.name, status.key)
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
         
-        self.object_id = object_id                          # Device.serial + status.key
-        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
-        
-        self._device = device
-        self._params = params
-        self._key = params.key
-        self._dict = { k: v for k,v in params.values.items() }
-
-        # update creation-time only attributes
         _LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        self._attr_unique_id = unique_id
-        
-        self._attr_has_entity_name = True
-        self._attr_name = status.name
-        self._name = status.key
-        
+        # update creation-time only attributes
+        self._dict = { k: v for k,v in params.values.items() }
+
         self._attr_options = list(self._dict.values())
         self._attr_current_option = None
         
@@ -114,42 +101,6 @@ class DabPumpsSelect(CoordinatorEntity, RestoreEntity, SelectEntity, DabPumpsEnt
 
         # Create all value related attributes
         self._update_attributes(status, force=True)
-    
-    
-    @property
-    def suggested_object_id(self) -> str | None:
-        """Return input for object id."""
-        return self.object_id
-    
-    
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID for use in home assistant."""
-        return self._attr_unique_id
-    
-    
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._attr_name
-        
-        
-    async def async_added_to_hass(self) -> None:
-        """
-        Handle when the entity has been added
-        """
-        await super().async_added_to_hass()
-
-        # Get last data from previous HA run                      
-        last_state = await self.async_get_last_state()
-
-        if last_state is not None and last_state.state in self._attr_options:
-            try:
-                _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state}")
-            
-                self._attr_current_option = last_state.state
-            except:
-                pass
     
     
     @callback
@@ -173,7 +124,7 @@ class DabPumpsSelect(CoordinatorEntity, RestoreEntity, SelectEntity, DabPumpsEnt
         """
         Set entity value, unit and icon
         """
-
+        
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
             attr_val = status.value
@@ -181,16 +132,16 @@ class DabPumpsSelect(CoordinatorEntity, RestoreEntity, SelectEntity, DabPumpsEnt
             attr_val = None
 
         # update value if it has changed
-        if self._attr_current_option != attr_val or force:
+        changed = super()._update_attributes(status, force)
+
+        if force or self._attr_current_option != attr_val:
 
             self._attr_current_option = attr_val
             self._attr_unit_of_measurement = self.get_unit()
-            
             self._attr_icon = self.get_icon()
-            return True
+            changed = True
         
-        # No changes
-        return False
+        return changed
     
     
     async def async_select_option(self, option: str) -> None:
@@ -198,12 +149,14 @@ class DabPumpsSelect(CoordinatorEntity, RestoreEntity, SelectEntity, DabPumpsEnt
         Change the selected option
         """
 
-        # Pass the status.code and not the translated status.value
-        code = next((code for code,value in self._dict.items() if value == option), None)
-        if code is not None:
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
-            if success:
-                self._attr_current_option = option
-                self.async_write_ha_state()
+        # Pass the status.code and not just the translated status.value
+        (code,value) = next(( (code,value) for code,value in self._dict.items() if value == option), None)
+        if code is None:
+            return
+
+        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code, value=value)
+        if status is not None:
+            self._update_attributes(status, force=True)
+            self.async_write_ha_state()
     
     

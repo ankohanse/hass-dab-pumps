@@ -32,10 +32,6 @@ from aiodabpumps import (
     DabPumpsStatus
 )
 
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-
 from .const import (
     DOMAIN,
     COORDINATOR,
@@ -43,11 +39,15 @@ from .const import (
     CONF_INSTALL_NAME,
     CONF_OPTIONS,
 )
-
+from .coordinator import (
+    DabPumpsCoordinator,
+)
 from .entity_base import (
+    DabPumpsEntity,
+)
+from .entity_helper import (
     DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
-    DabPumpsEntity,
 )
 
 
@@ -76,31 +76,19 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, params)
+        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
 
         # Sanity check
         if params.type != 'enum':
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a button entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        unique_id = self._coordinator.create_id(device.name, status.key)
-        
-        self.object_id = object_id                          # Device.serial + status.key
-        self.entity_id = ENTITY_ID_FORMAT.format(unique_id) # Device.name + status.key
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
 
-        self._device = device
-        self._params = params
-        self._key = params.key
-        self._dict = { k: v for k,v in params.values.items() }
-
-        # update creation-time only attributes
         _LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        self._attr_unique_id = unique_id
-
-        self._attr_has_entity_name = True
-        self._attr_name = status.name
-        self._name = status.key
+        # update creation-time only attributes
+        self._dict = { k: v for k,v in params.values.items() }
 
         self._attr_icon = self.get_icon()
 
@@ -115,24 +103,6 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         self._update_attributes(status, force=True)
     
     
-    @property
-    def suggested_object_id(self) -> str | None:
-        """Return input for object id."""
-        return self.object_id
-    
-    
-    @property
-    def unique_id(self) -> str:
-        """Return a unique ID for use in home assistant."""
-        return self._attr_unique_id
-    
-    
-    @property
-    def name(self) -> str:
-        """Return the name of the entity."""
-        return self._attr_name
-        
-        
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
@@ -148,7 +118,7 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force:bool=False):
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
         """
         Set entity value, unit and icon
         """
@@ -165,7 +135,10 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
 
         # Pass the status.code and not the translated status.value
         code = next((code for code,value in self._dict.items()), None)
-        if code:
-            success = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
-            if success:
-                self.async_write_ha_state()
+        if code is None:
+            return
+        
+        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code)
+        if status is not None:
+            self._update_attributes(status, force=True)
+            self.async_write_ha_state()

@@ -3,7 +3,7 @@ from dataclasses import asdict, fields, is_dataclass
 import logging
 
 from collections import namedtuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Final
 
@@ -456,17 +456,25 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return (self._device_map, self._config_map, self._status_map)
     
     
-    async def async_modify_data(self, object_id: str, entity_id: str, code: str|None = None, value: Any|None = None):
+    async def async_modify_data(self, object_id: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
         """
         Set an entity param via the API.
         """
         status = self._status_map.get(object_id)
         if not status:
             # Not found
-            return False
+            return None
 
         # update the remote value
-        return await self._async_change_device_status(status, code=code, value=value)
+        success = await self._async_change_device_status(status, code=code, value=value)
+        if success:
+            status.code = code if code != None else status.code
+            status.value = value if value != None else status.value
+            status.update_ts = datetime.now(timezone.utc)
+
+            return status
+        else:
+            return None
 
     
     async def _async_detect_for_config(self):
