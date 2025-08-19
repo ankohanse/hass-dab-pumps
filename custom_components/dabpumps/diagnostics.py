@@ -49,8 +49,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
             "options": config_entry.options,
         },
         "coordinator": await coordinator.async_get_diagnostics(),
-        "cache": await coordinator.async_get_diagnostics_for_cache(),
-        "api": await coordinator.async_get_diagnostics_for_api(), 
+        "cache": await coordinator._cache.async_get_diagnostics(),
+        "api": await coordinator._api.async_get_diagnostics(), 
     }
 
     # Convert contents to only contain standard structures: int, float, str, list, dict, ...

@@ -51,6 +51,7 @@ from aiodabpumps import (
 
 from .api import (
     DabPumpsApiFactory,
+    DabPumpsApiWrap,
 )
 
 from .const import (
@@ -79,8 +80,11 @@ from .store import (
     DabPumpsStore,
 )
 
-
+# Define logger
 _LOGGER = logging.getLogger(__name__)
+
+# Define helper functions
+utcnow = lambda: datetime.now(timezone.utc)
 
 
 class DabPumpsCoordinatorFetch(Enum):
@@ -206,7 +210,7 @@ class DabPumpsCoordinatorFactory:
 class DabPumpsCoordinator(DataUpdateCoordinator):
     """My custom coordinator."""
 
-    def __init__(self, hass: HomeAssistant, config_entry_id: str, api: DabPumpsApi, configs: dict[str,Any], options: dict[str,Any]):
+    def __init__(self, hass: HomeAssistant, config_entry_id: str, api: DabPumpsApiWrap, configs: dict[str,Any], options: dict[str,Any]):
         """
         Initialize my coordinator.
         """
@@ -221,7 +225,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         )
 
         self._config_entry_id: str = config_entry_id
-        self._api: DabPumpsApi = api
+        self._api: DabPumpsApiWrap = api
         self._configs: dict[str,Any] = configs
         self._options: dict[str,Any] = options
 
@@ -230,7 +234,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._install_name = configs.get(CONF_INSTALL_NAME, None)
 
         self._fetch_order = DabPumpsCoordinatorFetchOrder.INIT
-        self._fetch_ts: dict[str, datetime] = {}
 
         self._install_map: dict[str, DabPumpsInstall] = {}  # Points to either map read from cache or to map from _api
         self._device_map: dict[str, DabPumpsDevice] = {}    # Points to either map read from cache or to map from _api
@@ -245,12 +248,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._diag_retries: dict[int, int] = { n: 0 for n in range(COORDINATOR_RETRY_ATTEMPTS) }
         self._diag_durations: dict[int, int] = { n: 0 for n in range(10) }
         self._diag_fetch: dict[str, int] = { n.name: 0 for n in DabPumpsCoordinatorFetch }
-        self._diag_api_counters: dict[str, int] = {}
-        self._diag_api_history: list[DabPumpsHistoryItem] = []
-        self._diag_api_details: dict[str, DabPumpsHistoryDetail] = {}
-        self._diag_api_data: dict[str, Any] = {}
-
-        self._api.set_diagnostics(self._diag_api_handler)
 
         # Persisted cached data in case communication to DAB Pumps fails
         self._hass: HomeAssistant = hass
@@ -258,7 +255,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         # Auto reload when a new device is detected
         self._reload_count: int = 0
-        self._reload_time: datetime = datetime.now()
+        self._reload_time: datetime = utcnow()
         self._reload_delay: int = COORDINATOR_RELOAD_DELAY
         
 
@@ -470,7 +467,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if success:
             status.code = code if code != None else status.code
             status.value = value if value != None else status.value
-            status.update_ts = datetime.now(timezone.utc)
+            status.update_ts = utcnow()
 
             return status
         else:
@@ -479,7 +476,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     
     async def _async_detect_for_config(self):
         ex_first = None
-        ts_start = datetime.now()
+        ts_start = utcnow()
 
         for retry,fetch_method in enumerate(self._fetch_order):
             try:
@@ -489,18 +486,21 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 match fetch_method:
                     case DabPumpsCoordinatorFetch.WEB:
                         # Logout so we really force a subsequent login and not use an old token
-                        await self._async_logout()
-                        await self._async_login()
+                        await self._api.async_logout()
+                        await self._api.async_login()
                         
                         # Fetch the list of installations
-                        await self._async_detect_installations()
+                        await self._api.async_detect_installations(expiry=0, ignore=False)
+
+                        # If we reach this point then every fetch succeeded
+                        self._install_map = self._api.install_map
 
                     case DabPumpsCoordinatorFetch.CACHE:
                         raise Exception(f"Fetch from cache is not supported during config")
                 
                 # Keep track of how many retries were needed and duration
                 # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(retries = retry, duration = datetime.now()-ts_start, fetch=fetch_method)
+                self._update_statistics(retries = retry, duration = utcnow()-ts_start, fetch=fetch_method)
                 return True;
             
             except Exception as ex:
@@ -511,7 +511,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 await self._async_logout()
             
         # Keep track of how many retries were needed and duration
-        self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+        self._update_statistics(retries = retry, duration = utcnow()-ts_start)
 
         if ex_first:
             _LOGGER.warning(str(ex_first))
@@ -522,32 +522,43 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         
     async def _async_detect_data(self):
         error = None
-        ts_start = datetime.now()
+        ts_start = utcnow()
 
         for retry,fetch_method in enumerate(self._fetch_order):
             try:
                 # Retry handling
                 await self._async_handle_retry(retry, fetch_method)
 
+                ignore_periodic_refresh = self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]
+
                 match fetch_method:
                     case DabPumpsCoordinatorFetch.WEB:
                         # Check access token, if needed do a logout, wait and re-login
-                        await self._async_login()
+                        await self._api.async_login()
 
                         # Once a day, attempt to refresh
                         # - list of translations
-                        await self._async_detect_strings()
+                        await self._api.async_detect_strings(self.language, expiry=24*60*60, ignore=ignore_periodic_refresh)
 
                         # Once an hour, attempt to refresh
                         # - list of installations (just for diagnostics)
                         # - installation devices, additional device details and device configurations
-                        await self._async_detect_installations()
-                        await self._async_detect_install_details()
+                        await self._api.async_detect_installations(expiry=60*60, ignore=ignore_periodic_refresh)
+                        await self._api.async_detect_install_details(self._install_id, expiry=60*60, ignore=ignore_periodic_refresh)
 
                         # Always fetch device statuses
-                        await self._async_detect_install_statuses()
+                        await self._api.async_detect_install_statuses(self._install_id, expiry=0, ignore=False)
 
-                        # If we reach this point then every fetch succeeded
+                        # If no exception was thrown, then all detects succeeded.
+                        # Let our internal maps point to the _api maps (filtered for this install)
+                        install_serials = { device.serial for device in self._api.device_map.values() if device.install_id == self._install_id }
+                        install_configs = { device.config_id for device in self._api.device_map.values() if device.install_id == self._install_id }
+
+                        self._install_map = { k:i for k,i in self._api.device_map.items() }
+                        self._device_map = { k:d for k,d in self._api.device_map.items() if d.serial in install_serials }
+                        self._config_map = { k:c for k,c in self._api.config_map.items() if c.id in install_configs }
+                        self._status_map = { k:s for k,s in self._api.status_map.items() if s.serial in install_serials }
+
                         # Update the persisted cache
                         await self._async_write_cache()
 
@@ -556,7 +567,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
                 # Keep track of how many retries were needed and duration
                 # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(retries = retry, duration = datetime.now()-ts_start, fetch = fetch_method)
+                self._update_statistics(retries = retry, duration = utcnow()-ts_start, fetch = fetch_method)
 
                 return True
             
@@ -569,13 +580,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             _LOGGER.warning(error)
         
         # Keep track of how many retries were needed and duration
-        self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+        self._update_statistics(retries = retry, duration = utcnow()-ts_start)
         return False
     
 
     async def _async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
         error = None
-        ts_start = datetime.now()
+        ts_start = utcnow()
         fetch_web_done = False
 
         for retry,fetch_method in enumerate(DabPumpsCoordinatorFetchOrder.CHANGE):
@@ -586,7 +597,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 match fetch_method:
                     case DabPumpsCoordinatorFetch.WEB:
                         # Check access token, if needed do a logout, wait and re-login
-                        await self._async_login()
+                        await self._api.async_login()
 
                         # Attempt to change the device status via the API
                         await self._api.async_change_device_status(status.serial, status.key, code=code, value=value)
@@ -596,7 +607,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
                 # Keep track of how many retries were needed and duration
                 # Keep track of how often the successfull fetch is from Web or is from Cache
-                self._update_statistics(retries = retry, duration = datetime.now()-ts_start, fetch=fetch_method)
+                self._update_statistics(retries = retry, duration = utcnow()-ts_start, fetch=fetch_method)
                 return True
             
             except Exception as ex:
@@ -608,7 +619,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             _LOGGER.warning(error)
         
         # Keep track of how many retries were needed and duration
-        self._update_statistics(retries = retry, duration = datetime.now()-ts_start)
+        self._update_statistics(retries = retry, duration = utcnow()-ts_start)
         return False
 
 
@@ -629,130 +640,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 _LOGGER.info(f"Retry from {str(fetch_method)} now")
 
 
-    async def _async_login(self):
-        """
-        Attempt to refresh login token and re-login if needed.
-        """
-        await self._api.async_login()
-
-
-    async def _async_logout(self):
-        """
-        Logout
-        """
-        await self._api.async_logout()
-
-
-    async def _async_detect_installations(self):
-        """
-        Attempt to refresh the list of installations (once an hour, just for diagnostocs)
-        """
-        context = f"installations {self._username.lower()}"
-
-        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 86400:
-            # Not yet expired
-            return
-        
-        try:
-            await self._api.async_fetch_install_list()
-            self._fetch_ts[context] = datetime.now()
-
-            # If no exception was thrown, then the fetch method succeeded.
-            # Let our internal map point to the _api map
-            self._install_map = self._api.install_map
-
-        except Exception as e:
-            # Ignore issues if this is just a periodic update
-            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.INIT, DabPumpsCoordinatorFetchOrder.NEXT]:
-                _LOGGER.info(f"{e}")
-            else:
-                raise e from None
-
-
-    async def _async_detect_install_details(self):
-        """
-        Attempt to refresh installation details and devices when the cached one expires (once an hour)
-        """
-        context = f"installation {self._install_id}"
-
-        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 3600:
-            # Not yet expired
-            return
-
-        try:        
-            await self._api.async_fetch_install_details(self._install_id)
-            self._fetch_ts[context] = datetime.now()
-
-            # If no exception was thrown, then the fetch method succeeded.
-            # Let our internal maps point to the _api maps (filtered for this install)
-            install_serials = { device.serial for device in self._api.device_map.values() if device.install_id == self._install_id }
-            install_configs = { device.config_id for device in self._api.device_map.values() if device.install_id == self._install_id }
-
-            self._device_map = { k:d for k,d in self._api.device_map.items() if d.serial in install_serials }
-            self._config_map = { k:c for k,c in self._api.config_map.items() if c.id in install_configs }
-
-        except Exception as e:
-            # Ignore issues if this is just a periodic update
-            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]:
-                _LOGGER.info(f"{e}")
-            else:
-                raise e from None
-
-
-    async def _async_detect_install_statuses(self):
-        """
-        Fetch device statuses for all devices in an install (always)
-        """
-        context = f"statuses {self._install_id}"
-
-        try:
-            await self._api.async_fetch_install_statuses(self._install_id)
-            self._fetch_ts[context] = datetime.now()
-
-            # If no exception was thrown, then the fetch method succeeded.
-            # Let our internal maps point to the _api maps (filtered for this install)
-            install_serials = { device.serial for device in self._api.device_map.values() if device.install_id == self._install_id }
-
-            self._status_map = { k:s for k,s in self._api.status_map.items() if s.serial in install_serials }
-
-        except Exception as e:
-            # Never ignore issues
-            if self._fetch_order in []:
-                _LOGGER.info(f"{e}")
-            else:
-                raise e from None
-            
-
-    async def _async_detect_strings(self):
-        """
-        Attempt to refresh the list of translations (once a day)
-        """
-        context = f"localization_{self.language}"
-
-        if (datetime.now() - self._fetch_ts.get(context, datetime.min)).total_seconds() < 86400:
-            # Not yet expired
-            return
-
-        try:
-            await self._api.async_fetch_strings(self.language)
-            self._fetch_ts[context] = datetime.now()
-                    
-            # If no exception was thrown, then the fetch method succeeded.
-            # We do not need a local copy of self._api.string_map; the api takes care of translations
-
-        except Exception as e:
-            # Ignore issues if this is just a periodic update
-            if self._fetch_order in [DabPumpsCoordinatorFetchOrder.NEXT]:
-                _LOGGER.info(f"{e}")
-            else:
-                raise e from None
-
-
     async def _async_detect_changes(self):
         """Detect changes in the installation and trigger a integration reload if needed"""
 
         # Deliberately delay reload checks to prevent enless reloads if something is wrong
-        if (datetime.now() - self._reload_time).total_seconds() < self._reload_delay:
+        if (utcnow() - self._reload_time).total_seconds() < self._reload_delay:
             return
 
         # Detect any changes
@@ -850,29 +742,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 self._diag_fetch[fetch.name] += 1
 
 
-    def _diag_api_handler(self, context, item:DabPumpsHistoryItem, detail:DabPumpsHistoryDetail, data:dict):
-        """
-        Handle diagnostics updates from the api
-        """
-
-        # Call counters
-        if context in self._diag_api_counters:
-            self._diag_api_counters[context] += 1
-        else:
-            self._diag_api_counters[context] = 1
-
-        # Call history
-        self._diag_api_history.append(item)
-        while len(self._diag_api_history) > 64:
-            self._diag_api_history.pop(0)
-
-        # Call details
-        self._diag_api_details[context] = detail
-
-        # Api data
-        self._diag_api_data = self._diag_api_data | data
-
-
     async def async_get_diagnostics(self) -> dict[str, Any]:
         """
         Get all diagnostics values
@@ -890,7 +759,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         fetch_percent = { key: round(100.0 * n / fetch_total, 2) for key, n in fetch_counter.items() }
         
         return {
-            "diagnostics_ts": datetime.now(),
+            "diagnostics_ts": utcnow(),
             "diagnostics": {
                 "retries": {
                     "counter": retries_counter,
@@ -916,32 +785,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 "language": self.language,
                 "language_sys": self.system_language(),
                 "reload_count": self.reload_count,
-                "fetch_ts": self._fetch_ts,
             },
         }
     
 
-    async def async_get_diagnostics_for_cache(self) -> dict[str, Any]:
-
-        return self._cache.diag_data
-    
-
-    async def async_get_diagnostics_for_api(self) -> dict[str, Any]:
-
-        api_calls_total = sum([ n for key, n in self._diag_api_counters.items() ]) or 1
-        api_calls_counter = { key: n for key, n in self._diag_api_counters.items() }
-        api_calls_percent = { key: round(100.0 * n / api_calls_total, 2) for key, n in self._diag_api_counters.items() }
-
-        return {
-            "data": self._diag_api_data,
-            "calls": {
-                "counter": api_calls_counter,
-                "percent": api_calls_percent,
-            },                
-            "history": self._diag_api_history,
-            "details": self._diag_api_details,
-        }
+    @staticmethod
+    def _utcnow():
+        """Helper to get current time as UTC"""
+        return datetime.now(timezone.utc)
     
 
 
-
+    

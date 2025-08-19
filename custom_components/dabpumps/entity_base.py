@@ -36,8 +36,11 @@ from aiodabpumps import (
     DabPumpsStatus,
 )
 
-
+# Define logger
 _LOGGER = logging.getLogger(__name__)
+
+# Define helper functions
+utcnow = lambda: datetime.now(timezone.utc)
 
 
 @dataclass
@@ -466,4 +469,5 @@ class DabPumpsEntity(RestoreEntity):
                     return c
                 
         return None
+    
 

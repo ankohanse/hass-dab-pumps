@@ -23,7 +23,6 @@ from homeassistant.const import (
 )
 
 from aiodabpumps import (
-    DabPumpsApi,
     DabPumpsApiError,
     DabPumpsApiAuthError,
 ) 
@@ -45,10 +44,6 @@ from .const import (
     LANGUAGE_AUTO_FALLBACK,
     LANGUAGE_TEXT_AUTO,
     LANGUAGE_TEXT_FALLBACK,
-)
-
-from .api import (
-    DabPumpsApiFactory,
 )
 
 from .coordinator import (

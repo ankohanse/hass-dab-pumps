@@ -16,6 +16,9 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Define helper functions
+utcnow = lambda: datetime.now(timezone.utc)
+
 
 class DabPumpsStore(Store[dict]):
     """
@@ -118,7 +121,7 @@ class DabPumpsStore(Store[dict]):
         except Exception as ex:
             _LOGGER.warning(f"Exception while migrating persisted {self.key}: {ex}")
             self._store_data = {}
-            self._last_read = datetime.now()
+            self._last_read = utcnow()
 
         finally:
             self._migrate_file_checked = True
@@ -166,7 +169,7 @@ class DabPumpsStore(Store[dict]):
             self._store_data = {}
 
         finally:
-            self._last_read = datetime.now()
+            self._last_read = utcnow()
 
 
     async def async_write(self, force: bool = False):
@@ -183,7 +186,7 @@ class DabPumpsStore(Store[dict]):
                     # No changes since last write
                     return
             
-                if (datetime.now() - self._last_write).total_seconds() < self._write_period:
+                if (utcnow() - self._last_write).total_seconds() < self._write_period:
                     # Not long enough since last write
                     return        
 
@@ -194,7 +197,7 @@ class DabPumpsStore(Store[dict]):
             _LOGGER.warning(f"Exception while writing persisted {self.key}: {ex}")
 
         finally:
-            self._last_write = datetime.now()
+            self._last_write = utcnow()
 
 
     def get(self, item_key: str, item_default: Any = None):
@@ -210,11 +213,10 @@ class DabPumpsStore(Store[dict]):
         Set an item into the store data
         """
         self._store_data[item_key] = item_val
-        self._last_change = datetime.now()
+        self._last_change = utcnow()
 
 
-    @property
-    def diag_data(self):
+    async def async_get_diagnostics(self):
         """
         Return cache properties. Used for diagnostics
         """
@@ -228,3 +230,5 @@ class DabPumpsStore(Store[dict]):
             "data": self._store_data,
         }
     
+
+
