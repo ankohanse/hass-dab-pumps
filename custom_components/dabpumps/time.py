@@ -37,6 +37,7 @@ from aiodabpumps import (
 from .const import (
     DOMAIN,
     STATUS_VALIDITY_PERIOD,
+    utcnow,
 )
 from .coordinator import (
     DabPumpsCoordinator,
@@ -131,7 +132,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         """
         
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
             # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (23:59).
             # TimeEntity expects time object and can only be between 00:00 and 23:59
             # We sneakily replace value 1440 (24:00) into 23:59

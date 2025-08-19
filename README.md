@@ -8,28 +8,42 @@
 # Hass-DAB-Pumps
 
 [Home Assistant](https://home-assistant.io/) custom component for retrieving sensor information from DAB Pumps devices.
-This component uses webservices to connect to the DAB Pumps DConnect website and automatically determines which installations and devices are available there.
+This component connect to the remote DAB Pumps servers and automatically determines which installations and devices are available there.
 
 The custom component was tested with a ESybox 1.5kw combined with a DConnect Box 2. 
 It has also been reported to function correctly for ESybox Mini and ESybox Diver.
 
 
 # Prerequisites
-This device depends on the backend servers for the DAB Pumps DAB Live app and DConnect app to retrieve the device information from.
+This device depends on the backend servers for the DAB Pumps H2D app, DAB Live app or DConnect app to retrieve the device information from.
 
-- For ESybox Mini3 pumps:
+- For most pumps:
 
-  These are supported on the DAB Live app with a free DAB Live account, or on the DConnect App with a paid account. Follow the steps under either [DAB Live](#dab-live) or [DConnect](#dconnect).
+  All DAB's new network-capable pumps will progressively be connected with H2D. At the moment, H2D is supported by Esybox Mini3, Esybox Max, NGPanel, NGDrive and the new EsyBox.
+
+  Newer pump devices will have integrated connectivity (Esybox MAX and Esybox Mini), while older pumps might require a DConnect Box/Box2 device (Esybox and Esybox Diver).
+
+  Using free functionalilty you will be able to check the system's basic parameters via the H2D app and this Home Assistant integration. To allow to edit settings via the H2D app and this integration you will need a Dab Pumps subscription to premium H2D. Follow the steps under [H2D](#h2d)
 
 - For other pumps:
 
-  To see whether your pump device is supported via DConnect, browse to [internetofpumps.com](https://internetofpumps.com/), select 'Professional Users' and scroll down to the operation diagram. Some pump devices will have integrated connectivity (Esybox MAX and Esybox Mini), others might require a DConnect Box/Box2 device (Esybox and Esybox Diver). A free trial period is available, after that there is a yearly subscription to DAB Pumps DConnect (US$ 20 in 2024). Follow the steps under [DConnect](#dconnect).
+  The older Dab Live and DConnect apps are being replaced by H2D, but are still available.
+
+  Esybox Mini3 pumps are supported on the DAB Live app with a free DAB Live account, or on the DConnect App with a paid account. Follow the steps under either [DAB Live](#dab-live) or [DConnect](#dconnect).
+
+  To see whether your pump device is supported via DConnect, browse to [internetofpumps.com](https://internetofpumps.com/), select 'Professional Users' and scroll down to the operation diagram. A free trial period is available, after that there is a yearly subscription to DAB Pumps DConnect (US$ 20 in 2024). Follow the steps under [DConnect](#dconnect).
+
+## H2D
+If you have a pump that is supported by the H2D app then:
+- Download the H2D app on your phone or tablet
+- Setup an account to use with the app.
+- Follow the steps in the app to register your pump.
+- Create a separate account for use with this Home Assistant integration; follow the steps under  [Multiple Account Logins](#multiple-account-logins) below.
 
 ## DAB Live
 If you have a pump that is supported for DAB Live then:
 - Download the DAB Live app on your phone or tablet
 - Open the app and create a new account. When asked between 'Professional' or 'End User' either are good, this has no implications on the app or the Home Assistant Integration.
-- Remember the email address and password for the account as these are needed during setup of this Home Assistant integration.
 - Follow the steps in the app to register your pump
 - Finally, setup the Home Assistant integration via the steps under [Installation](#installation)
 
@@ -37,19 +51,35 @@ If you have a pump that is supported for DAB Live then:
 If you have a device that is supported for DConnect then:
 - Enable your DAB Pumps devices to connect to DConnect. For more information on this, see the manual of your device.
 - Install the DConnect app, or open the DConnect website in a browser.
-- Setup an account for DConnect, see the remarks under 'DConnect Account' below.
-- Remember the email address and password for the account as these are needed during setup of this Home Assistant integration.
-- In DConnect, add your installation via the device serial number.
-- Finally, setup the Home Assistant integration via the steps under [Installation](#installation)
+- Setup an account for DConnect.
+- Add your installation via the device serial number.
+- Setup a sepatate account for use with this Home Assistant integration; follow the steps under  [Multiple Account Logins](#multiple-account-logins) below.
 
-### DConnect Account
-The DAB Pumps DConnect website and app seem to have a problem with multiple logins from the same account. I.e. when already logged into the app or website, then a subsequent login via this integration may fail. 
+## Multiple Account Logins
+The H2D app and the DConnect app and website seem to have a problem with multiple logins from the same account. I.e. when already logged into the app or website, then a subsequent login via this Home Assistant integration may fail. 
 
-Therefore it is recommended to create a separate account within DAB Pumps DConnect that is specific for this HA integration. 
-- Create a fresh email address specifically for Home Assistant at gmail, outlook or another provider. 
-- Register this email address in the DAB Pumps DConnect website. Go to  [internetofpumps.com](https://internetofpumps.com/). Select 'Professional Users' and 'Open DConnect', or one of the apps.
-- When entering your details and needing to choose between 'Professional' or 'End User' either are good, this has no implications on the website, app or the Home Assistant Integration.
-- Then, while logged in into DAB Pumps DConnect using your normal account, go to 'installation settings' and under 'manage permissions' press 'Add member' to invite the newly created email account. Access level 'Installer' is recommended to be able to use all features of the integration.
+Therefore it is recommended to create a separate account within DAB Pumps H2D or DConnect that is specific for use with Home Assistant.
+
+- Create a fresh email address at gmail, outlook or another provider. 
+
+- For H2D:
+  - Login to the H2D app using your regular email address.
+  - In the bottom of the H2D app select 'Installations'.
+  - At the top of the page the owner is displayed. This is the name associated with your regular email address. Press the '>' next to it.
+  - Click on '+ Invite another user'.
+  - Fill in the email address you created specific for script use. Select user category 'Professional' to make use of all functionality of this library. Press 'Invite' and then 'Continue'.
+  - Follow the steps as described in the invitation email to register the new email address. Note that this is handled via the DConnect website (which is expected to be renamed to H2D soon).
+
+- For DConnect:
+  - Open the Dconnect app and logout from your normal account if needed.
+  - Press 'Login' and then 'Register'. This will open the DConnect website.
+  - Enter the email address you created for script use and choose a password. The choice between 'Professional' or 'End User' either are good as this is only used for marketing purposes;  it has no implications on the website, app or this library.
+  - Fill in all other details on the form and press 'Register'.
+  - Go back to the DConnect app and login using your normal account.
+  - Click on your installation and then at the bottom of the page on 'Installation Sharing'.
+  - Click on 'Add an installer' to make use of all functionality of this library.
+  - Fill in the email address you created specific for script use and click '+'. 
+
 
 # Installation
 
@@ -82,12 +112,15 @@ Copying all files in `/custom_components/dabpumps/` folder from this repo into t
     │   ├── coordinator.py
     │   ├── diagnostics.py
     │   ├── entity_base.py
+    │   ├── entity_helper.py
     │   ├── manifest.json
     │   ├── number.py
     │   ├── select.py
     │   ├── sensor.py
+    │   ├── store.py
     │   ├── strings.json
-    │   └── switch.py  
+    │   ├── switch.py
+    │   └── time.py  
     ```
 
 2. Restart Home Assistant.
@@ -101,8 +134,8 @@ To start the setup of this custom integration:
 - Follow the prompts in the configuration step
 
 ## Step 1 - Connection details
-The following properties are required to connect to the DAB Live or DConnect service:
-- Username: email address as registered for the DAB Live or DConnect service
+The following properties are required to connect to the Dab Pumps servers:
+- Username: email address as registered for Home Assistant use in H2D, DAB Live or DConnect
 - Password: password associated with the username
   
 ![setup_step_1](documentation/setup_step_1.png)
@@ -118,7 +151,7 @@ After succcessful setup, all devices from the DAB Pumps installation should show
 
 On the individual device pages, the hardware related device information is displayed, together with sensors typically grouped into main entity sensors, controls and diagnostics.
 
-Any sensors that you do not need can be manually disabled using the HASS GUI.
+Any sensors that you do not need can be manually disabled using the Home Assistant integration pages.
 
 ![controller_detail](documentation/controller_detail.png)
 
@@ -135,7 +168,7 @@ Please set your logging for the this custom component to debug during initial se
 logger:
   default: warn
   logs:
-    custom_components.dabpumps: info
+    custom_components.dabpumps: debug
 ```
 
 

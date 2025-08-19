@@ -1,15 +1,13 @@
 """Constants for the DAB Pumps integration."""
+from datetime import datetime, timezone
 import logging
-import types
 
 from homeassistant.const import (
-    CONF_USERNAME,
     CONF_PASSWORD,
 )
 from homeassistant.const import Platform
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
-#_LOGGER = logging.getLogger("custom_components.dabpumps")
 
 # Base component constants
 DOMAIN = "dabpumps"
@@ -98,9 +96,17 @@ SWITCH_VALUES_ALL = SWITCH_VALUES_ON + SWITCH_VALUES_OFF
 
 BUTTON_VALUES_ALL = ['1']
 
-COORDINATOR_RETRY_ATTEMPTS = 2
-COORDINATOR_RETRY_DELAY = 5    # seconds
+API_RETRY_ATTEMPTS = 2
+API_RETRY_DELAY = 5    # seconds
+
 COORDINATOR_RELOAD_DELAY = 1*60*60 # 1 hour in seconds
 COORDINATOR_RELOAD_DELAY_MAX = 24*60*60 # 24 hours in seconds
 
 STATUS_VALIDITY_PERIOD = 15*60 # 15 minutes in seconds
+
+
+# Global helper functions
+utcnow = lambda: datetime.now(timezone.utc)
+utcmin = lambda: datetime.min.replace(tzinfo=timezone.utc)
+
+

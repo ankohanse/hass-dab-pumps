@@ -45,6 +45,7 @@ from .const import (
     SWITCH_VALUES_ON,
     SWITCH_VALUES_OFF,
     STATUS_VALIDITY_PERIOD,
+    utcnow,
 )
 from .coordinator import (
     DabPumpsCoordinator,
@@ -129,7 +130,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         """
                 
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
 
             # Use original status.code, not translated status.value to compare
             if status.code in SWITCH_VALUES_ON:

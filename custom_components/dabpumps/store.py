@@ -3,7 +3,6 @@ import logging
 import os
 
 from contextlib import suppress
-from datetime import datetime, timezone
 from typing import Any
 
 from homeassistant.helpers.storage import Store
@@ -12,12 +11,11 @@ from homeassistant.helpers.storage import STORAGE_DIR
 from .const import (
     DOMAIN,
     STORE_KEY_CACHE,
+    utcnow,
+    utcmin,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
-# Define helper functions
-utcnow = lambda: datetime.now(timezone.utc)
 
 
 class DabPumpsStore(Store[dict]):
@@ -66,9 +64,9 @@ class DabPumpsStore(Store[dict]):
             self._store_key = store_key            
             self._store_data = {}
 
-            self._last_read = datetime.min
-            self._last_write = datetime.min
-            self._last_change = datetime.min
+            self._last_read = utcmin()
+            self._last_write = utcmin()
+            self._last_change = utcmin()
 
             self._migrate_file_checked = False
             self._migrate_file_lock = asyncio.Lock()
@@ -157,7 +155,7 @@ class DabPumpsStore(Store[dict]):
 
         try:
             # Persisted file already read?
-            if self._last_read > datetime.min:
+            if self._last_read > utcmin():
                 return 
             
             # Read the persisted file

@@ -46,6 +46,7 @@ from .const import (
     BINARY_SENSOR_VALUES_ON,
     BINARY_SENSOR_VALUES_OFF,
     STATUS_VALIDITY_PERIOD,
+    utcnow,
 )
 from .coordinator import (
     DabPumpsCoordinator,
@@ -138,7 +139,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         """
         
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
         
             # Use original status.code, not translated status.value to compare
             if status.code in BINARY_SENSOR_VALUES_ON:

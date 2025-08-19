@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
 import logging
 
 from typing import Any, Self
@@ -26,6 +25,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from .const import (
     ATTR_STORED_CODE,
     ATTR_STORED_VALUE,
+    utcnow,
 )
 from .coordinator import (
     DabPumpsCoordinator,
@@ -38,9 +38,6 @@ from aiodabpumps import (
 
 # Define logger
 _LOGGER = logging.getLogger(__name__)
-
-# Define helper functions
-utcnow = lambda: datetime.now(timezone.utc)
 
 
 @dataclass
@@ -141,7 +138,7 @@ class DabPumpsEntity(RestoreEntity):
                 code = dict_extra.get(ATTR_STORED_CODE),
                 value = dict_extra.get(ATTR_STORED_VALUE),
                 unit = self._params.unit,
-                status_ts= datetime.now(timezone.utc),
+                status_ts= utcnow(),
                 update_ts = None,
             )
 
@@ -396,14 +393,14 @@ class DabPumpsEntity(RestoreEntity):
         groups_config = [
             'Setpoint'
         ]
-        if self._params.group in groups_config and 'I' in self._params.change:
+        if self._params.group in groups_config and 'I' in self._params.change and self._coordinator.user_role in self._params.change:
             return EntityCategory.CONFIG
 
         # Return CONFIG for some specific entries associated with others that are CONFIG
         keys_config = [
             'PumpDisable',
         ]
-        if self._params.key in keys_config and 'I' in self._params.change:
+        if self._params.key in keys_config and 'I' in self._params.change and self._coordinator.user_role in self._params.change:
             return EntityCategory.CONFIG
             
         # Return DIAGNOSTIC for params in groups associated with diagnostics

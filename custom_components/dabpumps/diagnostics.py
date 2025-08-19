@@ -8,11 +8,9 @@ from multidict import MultiDict, MultiDictProxy
 from types import MappingProxyType, NoneType
 from typing import Any, Mapping
 
-from homeassistant.components.diagnostics import REDACTED
 from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
 
 from aiodabpumps import (
     DabPumpsHistoryItem, 
@@ -25,7 +23,6 @@ from .const import (
     CONF_INSTALL_NAME,
     DIAGNOSTICS_REDACT,
 )
-
 from .coordinator import (
     DabPumpsCoordinatorFactory,
     DabPumpsCoordinator,
@@ -49,7 +46,6 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, config_entry: 
             "options": config_entry.options,
         },
         "coordinator": await coordinator.async_get_diagnostics(),
-        "cache": await coordinator._cache.async_get_diagnostics(),
         "api": await coordinator._api.async_get_diagnostics(), 
     }
 

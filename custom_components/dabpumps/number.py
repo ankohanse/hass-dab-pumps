@@ -38,6 +38,7 @@ from aiodabpumps import (
 from .const import (
     DOMAIN,
     STATUS_VALIDITY_PERIOD,
+    utcnow,
 )
 from .coordinator import (
     DabPumpsCoordinator,
@@ -140,7 +141,7 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         """
         
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > datetime.now(timezone.utc):
+        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
             attr_val = status.value
         else:
             attr_val = None
