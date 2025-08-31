@@ -15,7 +15,7 @@ It has also been reported to function correctly for ESybox Mini and ESybox Diver
 
 
 # Prerequisites
-This device depends on the backend servers for the DAB Pumps H2D app, DAB Live app or DConnect app to retrieve the device information from.
+This integration depends on the backend servers for the DAB Pumps H2D app, DAB Live app or DConnect app to retrieve the device information from.
 
 - For most pumps:
 
@@ -67,13 +67,13 @@ Therefore it is recommended to create a separate account within DAB Pumps H2D or
   - In the bottom of the H2D app select 'Installations'.
   - At the top of the page the owner is displayed. This is the name associated with your regular email address. Press the '>' next to it.
   - Click on '+ Invite another user'.
-  - Fill in the email address you created specific for script use. Select user category 'Professional' to make use of all functionality of this library. Press 'Invite' and then 'Continue'.
+  - Fill in the email address you created specific for Home Assistant use. Select user category 'Professional' to make use of all functionality of this library. Press 'Invite' and then 'Continue'.
   - Follow the steps as described in the invitation email to register the new email address. Note that this is handled via the DConnect website (which is expected to be renamed to H2D soon).
 
 - For DConnect:
   - Open the Dconnect app and logout from your normal account if needed.
   - Press 'Login' and then 'Register'. This will open the DConnect website.
-  - Enter the email address you created for script use and choose a password. The choice between 'Professional' or 'End User' either are good as this is only used for marketing purposes;  it has no implications on the website, app or this library.
+  - Enter the email address you created for Home Assistant use and choose a password. The choice between 'Professional' or 'End User' either are good as this is only used for marketing purposes;  it has no implications on the website, app or this library.
   - Fill in all other details on the form and press 'Register'.
   - Go back to the DConnect app and login using your normal account.
   - Click on your installation and then at the bottom of the page on 'Installation Sharing'.
