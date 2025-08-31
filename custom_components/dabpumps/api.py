@@ -191,7 +191,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                         await self.async_login()
                         
                         # Fetch the list of installations
-                        await self.async_detect_installations(expiry=0, ignore=False)
+                        await self._async_detect_installations(expiry=0, ignore=False)
 
                     case DabPumpsFetchMethod.CACHE:
                         raise Exception(f"Fetch from cache is not supported during config")
@@ -521,7 +521,6 @@ class DabPumpsApiWrap(DabPumpsApi):
         self._diag_api_data = self._diag_api_data | data
 
 
-
     async def async_get_diagnostics(self) -> dict[str, Any]:
 
         data = self._diag_api_data | {
@@ -529,6 +528,7 @@ class DabPumpsApiWrap(DabPumpsApi):
             "device_map": self.device_map,
             "config_map": self.config_map,
             "status_map": self.status_map,
+            "string_map": self.string_map,
         }
 
         retries_total = sum(self._diag_retries.values()) or 1
