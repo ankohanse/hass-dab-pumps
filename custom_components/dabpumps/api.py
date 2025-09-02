@@ -19,6 +19,8 @@ from aiodabpumps import (
     DabPumpsStatus,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
+    DabPumpsApiConnectError,
+    DabPumpsApiAuthError,
 ) 
 
 from .const import (
@@ -202,7 +204,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True;
             
             except Exception as ex:
-                _LOGGER.debug(str(ex))
+                # Already logged at debug level in aiodabpumps
                 if not ex_first:
                     ex_first = ex
 
@@ -219,7 +221,7 @@ class DabPumpsApiWrap(DabPumpsApi):
     
         
     async def async_detect_data(self, install_id: str, fetch_order: DabPumpsFetchOrder):
-        error = None
+        ex_first = None
         ts_start = utcnow()
 
         for retry,fetch_method in enumerate(fetch_order):
@@ -260,12 +262,17 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True
             
             except Exception as ex:
-                error = str(ex)
-                _LOGGER.debug(error)
+                # Already logged at debug level in aiodabpumps
+                if not ex_first:
+                    ex_first = ex
                 await self.async_logout()
 
-        if error:
-            _LOGGER.warning(error)
+        if ex_first:
+            if isinstance(ex_first, (DabPumpsApiConnectError,DabPumpsApiAuthError)):
+                # Log as info, not warning, as we expect the issue to be gone at a next data refresh
+                _LOGGER.info(ex_first)
+            else:
+                _LOGGER.warning(ex_first)
         
         # Keep track of how many retries were needed and duration
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
@@ -273,7 +280,7 @@ class DabPumpsApiWrap(DabPumpsApi):
     
 
     async def async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
-        error = None
+        ex_first = None
         ts_start = utcnow()
         fetch_web_done = False
 
@@ -300,12 +307,13 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True
             
             except Exception as ex:
-                error = str(ex)
-                _LOGGER.debug(error)
+                # Already logged at debug level in aiodabpumps
+                if not ex_first:
+                    ex_first = ex
                 await self.async_logout()
             
-        if error:
-            _LOGGER.warning(error)
+        if ex_first:
+            _LOGGER.warning(ex_first)
         
         # Keep track of how many retries were needed and duration
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
