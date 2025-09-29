@@ -138,11 +138,21 @@ The following properties are required to connect to the Dab Pumps servers:
 - Username: email address as registered for Home Assistant use in H2D, DAB Live or DConnect
 - Password: password associated with the username
   
-![setup_step_1](documentation/setup_step_1.png)
+![setup_step_1](documentation/setup_step_user.png)
 
 ## Step 2 - Installations
 If your account is only assiciated with one DAB Pumps installation then this step is automatically skipped.
+
 Otherwise, select the DAB Pumps installation to use in Home Assistant. The other DAB Pumps installations can be added to the integration later on.
+
+![setup_step_2](documentation/setup_step_install.png)
+
+## Step 3 - User role
+If your account already has user role Professional/Installer then this step is automatically skipped.
+
+To enable all functionality of this integration, the role Professional/Installer is required. Select to update to this role, or you can choose to keep the existing user role.
+
+![setup_step_3](documentation/setup_step_role.png)
 
 ## Devices
 After succcessful setup, all devices from the DAB Pumps installation should show up in a list.
@@ -154,6 +164,11 @@ On the individual device pages, the hardware related device information is displ
 Any sensors that you do not need can be manually disabled using the Home Assistant integration pages.
 
 ![controller_detail](documentation/controller_detail.png)
+
+If the chosen user account has role Professional/Installer, then several entities will be available for configuration. When using role Private/Customer these will be includes as read-only sensors instead.
+
+![controller_config](documentation/entity_config.png)
+
 
 ## Sensors
 Sensors are registered to each device as `sensor.{device_name}_{sensor_name}` with an easy to read friendly name of `sensor_name`. 
@@ -183,4 +198,6 @@ Special thanks to the following people for their testing and feedback on the fir
 - [Bascht74](https://github.com/Bascht74) on ESybox Diver (with fluid add-on)
 - [Deshan Pillay](https://github.com/Desh86) on the DAB Live connectivity
 
+And for the translations:
+- [ViPeR5000](https://github.com/ViPeR5000) for Portugese
 

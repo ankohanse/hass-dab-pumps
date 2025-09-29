@@ -345,6 +345,18 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return (self._api.install_map)
 
 
+    async def async_config_change_role(self, install_id: str, role_old: DabPumpsUserRole, role_new: DabPumpsUserRole):
+        """
+        Try to update user role via API.
+        """
+        _LOGGER.debug(f"Config update role for {install_id} from {role_old} to {role_new}")
+        success = await self._api.async_change_install_role(install_id, role_old, role_new) 
+        if success:
+            return role_new
+        else:
+            return None
+
+
     async def _async_update_data(self):
         """
         Fetch sensor data from API.

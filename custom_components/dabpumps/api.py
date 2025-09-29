@@ -17,6 +17,7 @@ from aiodabpumps import (
     DabPumpsDevice,
     DabPumpsConfig,
     DabPumpsStatus,
+    DabPumpsUserRole,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
     DabPumpsApiConnectError,
@@ -318,6 +319,48 @@ class DabPumpsApiWrap(DabPumpsApi):
         # Keep track of how many retries were needed and duration
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
         return False
+    
+
+    async def async_change_install_role(self, install_id: str, role_old: DabPumpsUserRole, role_new: DabPumpsUserRole):
+        ex_first = None
+        ts_start = utcnow()
+        fetch_web_done = False
+
+        fetch_order = DabPumpsFetchOrder.CHANGE
+        for retry,fetch_method in enumerate(fetch_order):
+            try:
+                # Retry handling
+                await self._async_handle_retry(retry, fetch_method, fetch_order)
+
+                match fetch_method:
+                    case DabPumpsFetchMethod.WEB:
+                        # Check access token, if needed do a logout, wait and re-login
+                        await self.async_login()
+
+                        # Attempt to change the user role via the API
+                        await super().async_change_install_role(install_id, role_old, role_new)
+
+                    case DabPumpsFetchMethod.CACHE:
+                        continue
+
+                # Keep track of how many retries were needed and duration
+                # Keep track of how often the successfull fetch is from Web or is from Cache
+                self._update_statistics(retries = retry, duration = utcnow()-ts_start, fetch=fetch_method)
+                return True
+            
+            except Exception as ex:
+                # Already logged at debug level in aiodabpumps
+                if not ex_first:
+                    ex_first = ex
+                await self.async_logout()
+            
+        if ex_first:
+            _LOGGER.warning(ex_first)
+        
+        # Keep track of how many retries were needed and duration
+        self._update_statistics(retries = retry, duration = utcnow()-ts_start)
+        return False
+    
 
 
     async def _async_handle_retry(self, retry: int, fetch_method: DabPumpsFetchMethod, fetch_order: DabPumpsFetchOrder):

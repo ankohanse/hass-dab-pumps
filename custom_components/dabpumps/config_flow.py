@@ -23,6 +23,7 @@ from homeassistant.const import (
 )
 
 from aiodabpumps import (
+    DabPumpsUserRole,
     DabPumpsApiError,
     DabPumpsApiAuthError,
 ) 
@@ -53,6 +54,8 @@ from .coordinator import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# internal consts only used in config flow
+CONF_ROLE_MENU = "role_menu"
 
 @config_entries.HANDLERS.register("dabpumps")
 class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -104,13 +107,41 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         
         return False
     
+
+    async def async_try_update_role(self, role_old: DabPumpsUserRole, role_new: DabPumpsUserRole):
+        """Try to update the user role to Installer/Professional"""
+
+        _LOGGER.info(f"Trying update of user role from {role_old} to {role_new}...")
+        
+        self._errors = {}
+        coordinator = DabPumpsCoordinatorFactory.create_temp(self._username, self._password)
+        try:
+            # Call the DabPumpsApi with the update_role
+            role_rsp = await coordinator.async_config_change_role(self._install_id, role_old, role_new)
+            
+            if role_rsp is not None:
+                _LOGGER.info("Successfully updated role!")
+                self._errors = {}
+                return True
+            else:
+                self._errors[CONF_ROLE_MENU] = f"Role update failed"
+        
+        except DabPumpsApiError as e:
+            self._errors[CONF_ROLE_MENU] = f"Failed to connect to DAB Pumps DConnect servers"
+        except DabPumpsApiAuthError as e:
+            self._errors[CONF_ROLE_MENU] = f"Authentication failed"
+        except Exception as e:
+            self._errors[CONF_ROLE_MENU] = f"Unknown error: {e}"
+        
+        return False
+
     
     # This is step 1 for the user/pass function.
     async def async_step_user(self, user_input=None) -> FlowResult:
         """Handle a flow initialized by the user."""
         
         if user_input is not None:
-            _LOGGER.debug(f"Config flow handle username+password input")
+            _LOGGER.debug(f"Step user - handle input {user_input}")
             
             self._username = user_input.get(CONF_USERNAME, '')
             self._password = user_input.get(CONF_PASSWORD, '')
@@ -123,7 +154,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 return await self.async_step_install()
         
         # Show the form with the username+password and optionally a list of installations
-        _LOGGER.debug(f"Config flow show username+password input form")
+        _LOGGER.debug(f"Step user - show form")
         
         return self.async_show_form(
             step_id = "user", 
@@ -140,42 +171,25 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         
         # if there is only one installation found, then automatically select it and skip display of form
         if self._install_map and len(self._install_map)==1:
-            _LOGGER.info(f"Auto select the only installation available")
+            _LOGGER.debug(f"Step install - auto select the only installation available")
             user_input = {
                 CONF_INSTALL_NAME: next( (install.name for install in self._install_map.values()), None)
             }
         
         if user_input is not None:
-            _LOGGER.debug(f"Config flow handle installation input")
+            _LOGGER.debug(f"Step install - handle input {user_input}")
             
             self._install_name = user_input.get(CONF_INSTALL_NAME, None)
             self._install_id = next( (install.id for install in self._install_map.values() if install.name == self._install_name), None)
 
             # Do we have everything we need?
             if not self._errors and self._install_id and self._install_name:
-
-                # Use install_id as unique_id for this config flow to avoid the same hub being setup twice
-                await self.async_set_unique_id(self._install_id)
-                self._abort_if_unique_id_configured()
-            
-                # Create the integration entry
-                return self.async_create_entry(
-                    title = self._install_name, 
-                    data = {
-                        CONF_USERNAME: self._username,
-                        CONF_PASSWORD: self._password,
-                        CONF_INSTALL_ID: self._install_id,
-                        CONF_INSTALL_NAME: self._install_name,
-                    },
-                    options = {
-                        CONF_POLLING_INTERVAL: DEFAULT_POLLING_INTERVAL,
-                        CONF_LANGUAGE: DEFAULT_LANGUAGE,
-                    }
-                )
+                # go to the second step to check the user role in this install
+                return await self.async_step_role();
 
         # Show a form with the list of installations
-        _LOGGER.debug(f"Config flow show installation input form")
-        
+        _LOGGER.debug(f"Step install - show form")        
+
         return self.async_show_form(
             step_id = "install", 
             data_schema = vol.Schema({
@@ -189,6 +203,83 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         )
     
     
+    async def async_step_role(self, user_input=None) -> FlowResult:
+        """Third step in config flow to check user role"""
+        
+        role_old = next( (install.role for install in self._install_map.values() if install.id == self._install_id), DabPumpsUserRole.CUSTOMER)
+        _LOGGER.debug(f"Step role - detected current role {role_old}")
+
+        if role_old == DabPumpsUserRole.INSTALLER:
+            _LOGGER.debug(f"Step role - auto keep current role {role_old}")
+            user_input = {
+                CONF_ROLE_MENU: "KEEP"
+            }
+        
+        if user_input is not None:
+            _LOGGER.debug(f"Step role - handle input {user_input}")
+            
+            chosen = user_input.get(CONF_ROLE_MENU, None)
+            match chosen:
+                case "keep_role":
+                    # Keep using the current role
+                    pass
+            
+                case "update_role":
+                    # Try and update role to installer. Ignore if this fails
+                    role_new = DabPumpsUserRole.INSTALLER
+                    await self.async_try_update_role(role_old, role_new)
+
+            # Finish the config flow
+            return await self.async_step_finish();
+
+        # Show a form with role choices
+        _LOGGER.debug(f"Step role - build schema")
+        self._menu_options = {
+            "update_role": "update_role",
+            "keep_role": "keep_role",
+        }
+        schema = vol.Schema({
+            vol.Required(CONF_ROLE_MENU): selector({
+                "select": { 
+                    "options": list(self._menu_options.values()),
+                    "mode": "list",
+                    "translation_key": CONF_ROLE_MENU
+                }
+            })
+        })
+
+        _LOGGER.debug(f"Step role - show form")
+        return self.async_show_form(
+            step_id = "role", 
+            data_schema = schema,
+            errors = self._errors,
+            last_step = False,
+        )
+    
+    
+    async def async_step_finish(self, user_input=None) -> FlowResult:
+        """Configuration has finished"""
+        
+        # Use install_id as unique_id for this config flow to avoid the same hub being setup twice
+        await self.async_set_unique_id(self._install_id)
+        self._abort_if_unique_id_configured()
+    
+        # Create the integration entry
+        return self.async_create_entry(
+            title = self._install_name, 
+            data = {
+                CONF_USERNAME: self._username,
+                CONF_PASSWORD: self._password,
+                CONF_INSTALL_ID: self._install_id,
+                CONF_INSTALL_NAME: self._install_name,
+            },
+            options = {
+                CONF_POLLING_INTERVAL: DEFAULT_POLLING_INTERVAL,
+                CONF_LANGUAGE: DEFAULT_LANGUAGE,
+            }
+        )
+    
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry):

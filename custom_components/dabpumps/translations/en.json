@@ -2,16 +2,22 @@
     "config": {
         "step": {
             "user": {
-                "description": "Please enter your DAB Pumps DConnect account details:",
+                "description": "Please enter your DAB Pumps H2D, DConnect or Dab Live account details:",
                 "data": {
                     "password": "Password",
                     "username": "Username"
                 }
             },
             "install": {
-                "description": "Choose your DAB Pumps installation",
+                "description": "Choose your DAB Pumps installation.",
                 "data": {
-                    "install_name": "installation"
+                    "install_name": "Installations:"
+                }
+            },
+            "role": {
+                "description": "Your current user role within this DAB Pumps installation is Private/Customer.\nTo enable full functionality role Professional/Installer is advised.",
+                "data": {
+                    "role_menu": "Options:"
                 }
             }
         },
@@ -35,6 +41,14 @@
             }
         },
         "error": {
+        }
+    },
+    "selector": {
+        "role_menu": {
+            "options": {
+                "keep_role": "keep current user role Private/Customer",
+                "update_role": "try to update the user role to Professional/Installer"
+            }
         }
     }
 }
