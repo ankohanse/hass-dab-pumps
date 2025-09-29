@@ -2,16 +2,22 @@
     "config": {
         "step": {
             "user": {
-                "description": "Por favor, introduza os detalhes da sua conta DAB Pumps DConnect:",
+                "description": "Por favor, insira os dados da sua conta DAB Pumps H2D, DConnect ou Dab Live:",
                 "data": {
                     "password": "Palavra-passe",
                     "username": "Nome de Utilizador"
                 }
             },
             "install": {
-                "description": "Escolha a sua instalação DAB Pumps",
+                "description": "Escolha a sua instalação DAB Pumps.",
                 "data": {
-                    "install_name": "instalação"
+                    "install_name": "Instalações:"
+                }
+            },
+            "role": {
+                "description": "O seu papel de utilizador atual nesta instalação DAB Pumps é Privado/Cliente.\nPara ativar todas as funcionalidades, o papel Profissional/Instalador é aconselhado.",
+                "data": {
+                    "role_menu": "Opções:"
                 }
             }
         },
@@ -21,19 +27,28 @@
             "unknown": "Erro inesperado"
         },
         "abort": {
-            "already_configured": "O dispositivo já está configurado"
+            "already_configured": "Dispositivo já configurado"
         }
     },
     "options": {
         "step": {
             "init": {
-                "title": "Opções Gerais",
+                "title":"Opções Gerais",
                 "data": {
-                    "polling_interval": "Intervalo de pesquisa para atualizar os sensores (segundos)",
+                    "polling_interval": "Intervalo de pesquisa para atualizar sensores (segundos)",
                     "language": "Idioma"
                 }
             }
         },
-        "error": {}
+        "error": {
+        }
+    },
+    "selector": {
+        "role_menu": {
+            "options": {
+                "keep_role": "manter o papel de utilizador atual Privado/Cliente",
+                "update_role": "tentar atualizar o papel de utilizador para Profissional/Instalador"
+            }
+        }
     }
 }
