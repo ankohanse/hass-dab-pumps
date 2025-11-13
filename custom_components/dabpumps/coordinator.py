@@ -19,7 +19,7 @@ from homeassistant.const import (
     CONF_LANGUAGE,
 )
 
-from aiodabpumps import (
+from pydabpumps import (
     DabPumpsStatus,
     DabPumpsUserRole,
 ) 

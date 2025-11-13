@@ -30,7 +30,7 @@ from .const import (
 from .coordinator import (
     DabPumpsCoordinator,
 )
-from aiodabpumps import (
+from pydabpumps import (
     DabPumpsDevice,
     DabPumpsParams,
     DabPumpsStatus,

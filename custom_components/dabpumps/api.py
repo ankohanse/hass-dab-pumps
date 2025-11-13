@@ -5,14 +5,14 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Final
-import aiohttp
+import httpx
 import logging
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_create_clientsession
+from homeassistant.helpers.httpx_client import create_async_httpx_client
 
-from aiodabpumps import (
-    DabPumpsApi,
+from pydabpumps import (
+    AsyncDabPumps,
     DabPumpsInstall,
     DabPumpsDevice,
     DabPumpsConfig,
@@ -20,8 +20,8 @@ from aiodabpumps import (
     DabPumpsUserRole,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
-    DabPumpsApiConnectError,
-    DabPumpsApiAuthError,
+    DabPumpsConnectError,
+    DabPumpsAuthError,
 ) 
 
 from .const import (
@@ -133,8 +133,8 @@ class DabPumpsFetchOrder():
     CHANGE: Final = ( DabPumpsFetchMethod.WEB, DabPumpsFetchMethod.WEB, DabPumpsFetchMethod.WEB, )
 
 
-class DabPumpsApiWrap(DabPumpsApi):
-    """Wrapper around aiodabpumps DabPumpsApi class"""
+class DabPumpsApiWrap(AsyncDabPumps):
+    """Wrapper around pydabpumps AsyncDabPumps class"""
 
     def __init__(self, hass: HomeAssistant, username: str, password: str, language: str):
         """Initialize the api"""
@@ -145,8 +145,7 @@ class DabPumpsApiWrap(DabPumpsApi):
         self._language = language
 
         # Create a fresh http client
-        client: aiohttp.ClientSession = async_create_clientsession(hass) 
-        #client: httpx.AsyncClient = create_async_httpx_client(hass)
+        client: httpx.AsyncClient = create_async_httpx_client(hass) 
     
         # Initialize the actual api
         super().__init__(username, password, client=client)
@@ -205,7 +204,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True;
             
             except Exception as ex:
-                # Already logged at debug level in aiodabpumps
+                # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
 
@@ -263,13 +262,13 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True
             
             except Exception as ex:
-                # Already logged at debug level in aiodabpumps
+                # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
                 await self.async_logout()
 
         if ex_first:
-            if isinstance(ex_first, (DabPumpsApiConnectError,DabPumpsApiAuthError)):
+            if isinstance(ex_first, (DabPumpsConnectError,DabPumpsAuthError)):
                 # Log as info, not warning, as we expect the issue to be gone at a next data refresh
                 _LOGGER.info(ex_first)
             else:
@@ -297,7 +296,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                         await self.async_login()
 
                         # Attempt to change the device status via the API
-                        await super().async_change_device_status(status.serial, status.key, code=code, value=value)
+                        await super().change_device_status(status.serial, status.key, code=code, value=value)
 
                     case DabPumpsFetchMethod.CACHE:
                         continue
@@ -308,7 +307,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True
             
             except Exception as ex:
-                # Already logged at debug level in aiodabpumps
+                # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
                 await self.async_logout()
@@ -338,7 +337,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                         await self.async_login()
 
                         # Attempt to change the user role via the API
-                        await super().async_change_install_role(install_id, role_old, role_new)
+                        await super().change_install_role(install_id, role_old, role_new)
 
                     case DabPumpsFetchMethod.CACHE:
                         continue
@@ -349,7 +348,7 @@ class DabPumpsApiWrap(DabPumpsApi):
                 return True
             
             except Exception as ex:
-                # Already logged at debug level in aiodabpumps
+                # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
                 await self.async_logout()
@@ -413,7 +412,7 @@ class DabPumpsApiWrap(DabPumpsApi):
             return  # Not yet expired
 
         try:        
-            await super().async_fetch_install_details(install_id)
+            await super().fetch_install_details(install_id)
             self._fetch_ts[context] = utcnow()
 
         except Exception as e:
@@ -434,7 +433,7 @@ class DabPumpsApiWrap(DabPumpsApi):
             return  # Not yet expired
 
         try:
-            await super().async_fetch_install_statuses(install_id)
+            await super().fetch_install_statuses(install_id)
             self._fetch_ts[context] = utcnow()
 
         except Exception as e:
@@ -462,11 +461,11 @@ class DabPumpsApiWrap(DabPumpsApi):
             return  # Not yet expired
 
         try:
-            await super().async_fetch_strings(language)
+            await super().fetch_strings(language)
             self._fetch_ts[context] = utcnow()
                     
             # If no exception was thrown, then the fetch method succeeded.
-            # We do not need a local copy of super().string_map; the aiodabpumps api takes care of translations
+            # We do not need a local copy of super().string_map; the pydabpumps api takes care of translations
 
         except Exception as e:
             # Ignore issues if this is just a periodic update

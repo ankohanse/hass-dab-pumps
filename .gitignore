@@ -1,3 +1,8 @@
+# Custom for this project
+_backup/
+_data/
+_icons/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -28,9 +33,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-_backup/
-_data/
-_icons/
+
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

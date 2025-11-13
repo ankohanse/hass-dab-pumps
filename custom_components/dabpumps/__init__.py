@@ -49,9 +49,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
     """Set up DAB Pumps from a config entry."""
     
-    # Assign the HA configured log level of this module to the aiodabpumps module
+    # Assign the HA configured log level of this module to the pydabpumps module
     log_level: int = _LOGGER.getEffectiveLevel()
-    lib_logger: logging.Logger = logging.getLogger("aiodabpumps")
+    lib_logger: logging.Logger = logging.getLogger("pydabpumps")
     lib_logger.setLevel(log_level)
 
     _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")

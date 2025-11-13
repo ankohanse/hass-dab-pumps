@@ -35,7 +35,7 @@ from datetime import timedelta
 from collections import defaultdict
 from collections import namedtuple
 
-from aiodabpumps import (
+from pydabpumps import (
     DabPumpsDevice,
     DabPumpsParams,
     DabPumpsStatus

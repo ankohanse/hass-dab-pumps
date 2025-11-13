@@ -22,10 +22,10 @@ from homeassistant.const import (
     CONF_LANGUAGE,
 )
 
-from aiodabpumps import (
+from pydabpumps import (
     DabPumpsUserRole,
-    DabPumpsApiError,
-    DabPumpsApiAuthError,
+    DabPumpsError,
+    DabPumpsAuthError,
 ) 
 
 
@@ -72,9 +72,9 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self._install_name = None
         self._errors = {}
 
-        # Assign the HA configured log level of this module to the aiodabpumps module
+        # Assign the HA configured log level of this module to the v module
         log_level: int = _LOGGER.getEffectiveLevel()
-        lib_logger: logging.Logger = logging.getLogger("aiodabpumps")
+        lib_logger: logging.Logger = logging.getLogger("pydabpumps")
         lib_logger.setLevel(log_level)
 
         _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")
@@ -98,9 +98,9 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._errors[CONF_USERNAME] = f"No installations detected"
         
-        except DabPumpsApiError as e:
+        except DabPumpsError as e:
             self._errors[CONF_PASSWORD] = f"Failed to connect to DAB Pumps DConnect servers"
-        except DabPumpsApiAuthError as e:
+        except DabPumpsAuthError as e:
             self._errors[CONF_PASSWORD] = f"Authentication failed"
         except Exception as e:
             self._errors[CONF_PASSWORD] = f"Unknown error: {e}"
@@ -126,9 +126,9 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 self._errors[CONF_ROLE_MENU] = f"Role update failed"
         
-        except DabPumpsApiError as e:
+        except DabPumpsError as e:
             self._errors[CONF_ROLE_MENU] = f"Failed to connect to DAB Pumps DConnect servers"
-        except DabPumpsApiAuthError as e:
+        except DabPumpsAuthError as e:
             self._errors[CONF_ROLE_MENU] = f"Authentication failed"
         except Exception as e:
             self._errors[CONF_ROLE_MENU] = f"Unknown error: {e}"

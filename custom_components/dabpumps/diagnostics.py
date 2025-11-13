@@ -12,7 +12,7 @@ from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from aiodabpumps import (
+from pydabpumps import (
     DabPumpsHistoryItem, 
     DabPumpsHistoryDetail,
     DabPumpsDictFactory,
