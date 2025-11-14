@@ -189,8 +189,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
                         # Logout so we really force a subsequent login and not use an old token
-                        await self.async_logout()
-                        await self.async_login()
+                        await super().logout()
+                        await super().login()
                         
                         # Fetch the list of installations
                         await self._async_detect_installations(expiry=0, ignore=False)
@@ -208,7 +208,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 if not ex_first:
                     ex_first = ex
 
-                await self.async_logout()
+                await super().logout()
             
         # Keep track of how many retries were needed and duration
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
@@ -234,7 +234,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
                         # Check access token, if needed do a logout, wait and re-login
-                        await self.async_login()
+                        await super().login()
 
                         # Once a day, attempt to refresh
                         # - list of translations
@@ -265,7 +265,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
-                await self.async_logout()
+                await super().logout()
 
         if ex_first:
             if isinstance(ex_first, (DabPumpsConnectError,DabPumpsAuthError)):
@@ -293,7 +293,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
                         # Check access token, if needed do a logout, wait and re-login
-                        await self.async_login()
+                        await super().login()
 
                         # Attempt to change the device status via the API
                         await super().change_device_status(status.serial, status.key, code=code, value=value)
@@ -310,7 +310,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
-                await self.async_logout()
+                await super().logout()
             
         if ex_first:
             _LOGGER.warning(ex_first)
@@ -334,7 +334,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
                         # Check access token, if needed do a logout, wait and re-login
-                        await self.async_login()
+                        await super().login()
 
                         # Attempt to change the user role via the API
                         await super().change_install_role(install_id, role_old, role_new)
@@ -351,7 +351,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
-                await self.async_logout()
+                await super().logout()
             
         if ex_first:
             _LOGGER.warning(ex_first)
@@ -389,7 +389,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
             return  # Not yet expired
         
         try:
-            await self.async_fetch_install_list()
+            await super().fetch_install_list()
             self._fetch_ts[context] = utcnow()
 
         except Exception as e:
