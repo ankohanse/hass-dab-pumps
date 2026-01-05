@@ -265,7 +265,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
-                await super().logout()
 
         if ex_first:
             if isinstance(ex_first, (DabPumpsConnectError,DabPumpsAuthError)):
