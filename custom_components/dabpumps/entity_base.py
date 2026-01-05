@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 import logging
 
 from typing import Any, Self
@@ -25,6 +26,7 @@ from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 from .const import (
     ATTR_STORED_CODE,
     ATTR_STORED_VALUE,
+    ATTR_STORED_TS,
     utcnow,
 )
 from .coordinator import (
@@ -46,20 +48,24 @@ class DabPumpsEntityExtraData(ExtraStoredData):
 
     code: str = None
     value: str = None
+    ts: datetime = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dict representation of the sensor data."""
         return {
             ATTR_STORED_CODE: self.code,
             ATTR_STORED_VALUE: self.value,
+            ATTR_STORED_TS: self.ts,
         }
 
     @classmethod
     def from_dict(cls, restored: dict[str, Any]) -> Self | None:
         """Initialize a stored sensor state from a dict."""
+
         return cls(
             code = restored.get(ATTR_STORED_CODE),
             value = restored.get(ATTR_STORED_VALUE),
+            ts = restored.get(ATTR_STORED_TS),
         )
 
 
@@ -86,6 +92,7 @@ class DabPumpsEntity(RestoreEntity):
         # Attributes to be restored in the next HA run
         self._status_code: str = None
         self._status_value: str = None
+        self._status_ts: datetime = None
 
 
     @property
@@ -114,6 +121,7 @@ class DabPumpsEntity(RestoreEntity):
         return DabPumpsEntityExtraData(
             code = self._status_code,
             value = self._status_value,
+            ts = self._status_ts,
         )
     
 
@@ -138,11 +146,12 @@ class DabPumpsEntity(RestoreEntity):
                 code = dict_extra.get(ATTR_STORED_CODE),
                 value = dict_extra.get(ATTR_STORED_VALUE),
                 unit = self._params.unit,
-                status_ts= utcnow(),
+                status_ts = dict_extra.get(ATTR_STORED_TS),
                 update_ts = None,
             )
 
-            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code})")
+            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code}) with ts: {status.status_ts}")
+        
             self._update_attributes(status, force=True)
     
 
@@ -154,9 +163,10 @@ class DabPumpsEntity(RestoreEntity):
         """
         changed = False
 
-        if self._status_code != status.code or self._status_value != status.value:
+        if self._status_code != status.code or self._status_value != status.value or self._status_ts != status.status_ts:
             self._status_code = status.code
             self._status_value = status.value
+            self._status_ts = status.status_ts
             changed = True
 
         return changed

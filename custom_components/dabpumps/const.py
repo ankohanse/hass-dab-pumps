@@ -62,6 +62,7 @@ ATTR_PRODUCT_INSTALL = "Installation Name"
 # Extra attributes that are restored from the previous HA run
 ATTR_STORED_CODE = "code"
 ATTR_STORED_VALUE = "value"
+ATTR_STORED_TS = "ts"
 
 LANGUAGE_AUTO = "auto"
 LANGUAGE_AUTO_FALLBACK = "en"
