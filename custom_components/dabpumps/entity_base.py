@@ -75,15 +75,16 @@ class DabPumpsEntity(RestoreEntity):
     (DabPumpsSensor, DabPumpsBinarySensor, DabPumpsNumber, DabPumpsSelect, DabPumpsSwitch)
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, object_id: str, device: DabPumpsDevice, params: DabPumpsParams):
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams):
         self._coordinator = coordinator
         self._device = device
         self._params = params
         self._attr_unit = self._convert_to_unit()
 
         # The unique identifiers for this sensor within Home Assistant
-        self.object_id = object_id                                                  # Device.serial + params.key
-        self._attr_unique_id = self._coordinator.create_id(device.name, params.key) # Device.name + params.key
+        self._status_key = status_key      # Key for lookup of status in the API
+        self._attr_object_id = self._coordinator.create_id(device.serial, params.key) # Device.serial + params.key
+        self._attr_unique_id = self._coordinator.create_id(device.name, params.key)   # Device.name + params.key
         
         self._attr_has_entity_name = True
         self._attr_name = params.name
@@ -98,7 +99,7 @@ class DabPumpsEntity(RestoreEntity):
     @property
     def suggested_object_id(self) -> str | None:
         """Return input for object id."""
-        return self.object_id
+        return self._attr_object_id
     
     
     @property

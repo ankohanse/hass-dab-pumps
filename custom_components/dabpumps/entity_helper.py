@@ -67,7 +67,7 @@ class DabPumpsEntityHelper:
         entities = []
         valid_unique_ids: list[str] = []
 
-        for object_id, status in status_map.items():
+        for status_key, status in status_map.items():
 
             # skip statuses that are not associated with a device in this installation
             device = device_map.get(status.serial, None)
@@ -94,13 +94,13 @@ class DabPumpsEntityHelper:
             # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
             entity = None                
             try:
-                entity = target_class(self._coordinator, object_id, device, params, status)
+                entity = target_class(self._coordinator, status_key, device, params, status)
                 entities.append(entity)
                 
                 valid_unique_ids.append(entity.unique_id)
 
             except Exception as  ex:
-                _LOGGER.warning(f"Could not instantiate {platform} entity class for {object_id}. Details: {ex}")
+                _LOGGER.warning(f"Could not instantiate {platform} entity class for {status_key}. Details: {ex}")
 
         # Remember valid unique_ids per platform so we can do an entity cleanup later
         self._coordinator.set_valid_unique_ids(target_platform, valid_unique_ids)

@@ -78,13 +78,13 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, object_id: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
 
         CoordinatorEntity.__init__(self, coordinator)
-        DabPumpsEntity.__init__(self, coordinator, object_id, device, params)
+        DabPumpsEntity.__init__(self, coordinator, status_key, device, params)
         
         # Sanity check
         if params.type != 'enum':
@@ -102,7 +102,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         self._attr_device_class = SwitchDeviceClass.SWITCH
 
         self._attr_device_info = DeviceInfo(
-            identifiers = {(DOMAIN, self._device.serial)},
+            identifiers = {(DOMAIN, coordinator.create_id(self._device.serial))},
         )
         
         # Create all value related attributes
@@ -115,7 +115,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         
         # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
-        status = status_map.get(self.object_id)
+        status = status_map.get(self.status_key)
         if not status:
             return
 
@@ -173,7 +173,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         if code is None:
             return
         
-        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code, value=value)
+        status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, code=code, value=value)
         if status is not None:
             self._update_attributes(status, force=True)
             self.async_write_ha_state()
@@ -189,7 +189,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         if code is None:
             return
         
-        status = await self._coordinator.async_modify_data(self.object_id, self.entity_id, code=code, value=value)
+        status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, code=code, value=value)
         if status is not None:
             self._update_attributes(status, force=True)
             self.async_write_ha_state()

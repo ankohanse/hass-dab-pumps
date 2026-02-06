@@ -279,11 +279,12 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         install_devices = [ d for d in self._api.device_map.values() if d.install_id == self._install_id ]
         for device in install_devices:
-            _LOGGER.debug(f"Create device {device.serial} ({device.name}) for installation '{self._install_name}'")
+            device_id = self.create_id(device.serial)
+            _LOGGER.debug(f"Create device {device_id} ({device.name}) for installation '{self._install_name}'")
 
             dr.async_get_or_create(
                 config_entry_id = config_entry.entry_id,
-                identifiers = {(DOMAIN, device.serial)},
+                identifiers = {(DOMAIN, device_id)},
                 connections = {(CONNECTION_NETWORK_MAC, device.mac_address)} if device.mac_address else None,
                 name = device.name,
                 manufacturer =  device.vendor,
@@ -292,7 +293,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 hw_version = device.hw_version,
                 sw_version = device.sw_version,
             )
-            valid_ids[device.serial] = (DOMAIN, device.serial)
+            valid_ids[device_id] = (DOMAIN, device_id)
 
         # Remember valid device ids so we can do a cleanup of invalid ones later
         self._valid_device_ids = valid_ids
@@ -383,11 +384,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         return (self._api.device_map, self._api.config_map, self._api.status_map)
     
     
-    async def async_modify_data(self, object_id: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
+    async def async_modify_data(self, status_key: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
         """
         Set an entity param via the API.
         """
-        status = self._api.status_map.get(object_id)
+        status = self._api.status_map.get(status_key)
         if not status:
             # Not found
             return None
