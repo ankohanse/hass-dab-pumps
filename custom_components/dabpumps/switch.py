@@ -115,7 +115,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         
         # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
-        status = status_map.get(self.status_key)
+        status = status_map.get(self._status_key)
         if not status:
             return
 

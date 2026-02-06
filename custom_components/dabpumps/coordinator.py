@@ -1,4 +1,5 @@
 import logging
+import re
 
 from datetime import datetime, timedelta
 from typing import Any
@@ -257,7 +258,10 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 
     def create_id(self, *args):
-        return self._api.create_id(*args)
+        str = '_'.join(args).strip('_')
+        str = re.sub('[- ]', '_', str)
+        str = re.sub('[^a-z0-9_]+', '', str.lower())
+        return str           
 
 
     def set_valid_unique_ids(self, platform: Platform, ids: list[str]):
