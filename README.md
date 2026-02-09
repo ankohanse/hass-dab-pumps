@@ -189,7 +189,7 @@ logger:
 
 
 # Knowledge base
-For additional suggestions and tips&trick, see the  separate [knowledge base](https://github.com/ankohanse/hass-dab-pumps/blob/master/KNOWLEDGE_BASE.md) document.
+For additional suggestions and tips&trick, see the [wiki](https://github.com/ankohanse/hass-dab-pumps/wiki).
 
 
 # Credits
