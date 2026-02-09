@@ -1,4 +1,6 @@
 {
   "name": "DAB Pumps",
-  "render_readme": true
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "dabpumps.zip"
 }
