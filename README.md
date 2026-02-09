@@ -188,6 +188,10 @@ logger:
 ```
 
 
+# Knowledge base
+For additional suggestions and tips&trick, see the  separate [knowledge base](https://github.com/ankohanse/hass-dab-pumps/blob/master/KNOWLEDGE_BASE.md) document.
+
+
 # Credits
 
 Special thanks to the following people for their testing and feedback on the first versions of this custom integration:
