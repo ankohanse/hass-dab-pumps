@@ -19,7 +19,7 @@ jobs:
           zip -r dabpumps.zip ./custom_components/dabpumps/
 
       - name: Upload Zip to Release
-        uses: softprops/action-gh-release@v2.2.1
+        uses: softprops/action-gh-release@v2.5.0
         with:
           files: dabpumps.zip
         env:
