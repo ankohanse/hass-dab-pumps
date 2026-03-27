@@ -576,7 +576,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
             "install_map": self.install_map,
             "device_map": self.device_map,
             "config_map": self.config_map,
-            "status_map": self.status_map,
+            "status_static_map": self._status_static_map,
+            "status_actual_map": self._status_actual_map,
             "string_map": self.string_map,
         }
 
