@@ -224,6 +224,17 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         else:
             return DabPumpsUserRole.CUSTOMER[0]
     
+    
+    @property
+    def install_subscription_valid(self) -> bool:
+        # Return whether the installation has a valid subscription.
+        # Without a subscription most entities can be viewed but not changed (except in group 'extra comfort').
+        subscr_ts = None
+        if self._install_id in self._api.install_map:
+            subscr_ts = self._api.install_map[self._install_id].subscr_ts
+            
+        return subscr_ts is None or subscr_ts > utcnow()
+
 
     @property
     def language(self) -> str:

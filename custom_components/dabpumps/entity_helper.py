@@ -143,10 +143,20 @@ class DabPumpsEntityHelper:
             'Errors'
         ]
 
+        # Groups that do not need a subscription to change an entity value
+        groups_no_subscr = [
+            'Extra Comfort',
+        ]
+
         # First check if entity is allowed to be viewed according to user_role
         if self._coordinator.user_role not in params.view:
             return False
         
+        # For a changable entity we need to check the subscription
+        if self._coordinator.user_role in params.change:
+            if params.group not in groups_no_subscr and not self._coordinator.install_subscription_valid:
+                return False
+
         # Then check individual keys
         if params.key in keys_whitelist:
             return True
