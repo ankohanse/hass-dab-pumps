@@ -176,8 +176,8 @@ class DabPumpsEntity(RestoreEntity):
     def _convert_to_unit(self):
         """Convert from DAB Pumps units to Home Assistant units"""
         match self._params.unit:
-            case '°C':          return UnitOfTemperature.CELSIUS
-            case '°F':          return UnitOfTemperature.FAHRENHEIT
+            case '°C'|'Ã‚Â°C':  return UnitOfTemperature.CELSIUS
+            case '°F'|'Ã‚Â°F':  return UnitOfTemperature.FAHRENHEIT
             case 'bar':         return UnitOfPressure.BAR
             case 'psi':         return UnitOfPressure.PSI
             case 'mc':          return UnitOfVolume.CUBIC_METERS
