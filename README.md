@@ -93,38 +93,10 @@ This custom integration is avalable via HACS (Home Assistant Community Store).
 
 
 ## Manual install
-1. Under the `<config directory>/custom_components/` directory create a directory called `dabpumps`. 
-Copying all files in `/custom_components/dabpumps/` folder from this repo into the new `<config directory>/custom_components/dabpumps/` directory you just created.
-
-    This is how your custom_components directory should look like:
-
-    ```bash
-    custom_components
-    ├── dabpumps
-    │   ├── translations
-    │   │   └── en.json
-    │   ├── __init__.py
-    │   ├── api.py
-    │   ├── binary_sensor.py
-    │   ├── button.py
-    │   ├── config_flow.py
-    │   ├── const.py
-    │   ├── coordinator.py
-    │   ├── diagnostics.py
-    │   ├── entity_base.py
-    │   ├── entity_helper.py
-    │   ├── manifest.json
-    │   ├── number.py
-    │   ├── select.py
-    │   ├── sensor.py
-    │   ├── store.py
-    │   ├── strings.json
-    │   ├── switch.py
-    │   └── time.py  
-    ```
-
-2. Restart Home Assistant.
-3. Follow the UI based [Configuration](#configuration)
+1. Under the `<config directory>/custom_components/` directory create a directory called `dabpumps`.
+2. Copy all files and subfolders within `dabpumps.zip` into the new `<config directory>/custom_components/dabpumps/` directory you just created.
+3. Restart Home Assistant.
+4. Follow the UI based [Configuration](#configuration)
 
 # Configuration
 To start the setup of this custom integration:
@@ -165,15 +137,26 @@ Any sensors that you do not need can be manually disabled using the Home Assista
 
 ![controller_detail](documentation/controller_detail.png)
 
-If the chosen user account has role Professional/Installer, then several entities will be available for configuration. When using role Private/Customer these will be includes as read-only sensors instead.
+![sensor](documentation/sensor_detail.png)
+
+## Entities
+Some entities will be available for configuration depending on the role granted to the user account and on whether an active subscription with DAB Pumps is available:
+
+| entity or group | role | subscripton |
+| ------------ | ---- | ----------- |
+| Power Shower | Customer/Private or <br/> Installer/Professional | Not needed |
+| Sleep Mode | Customer/Private or <br/> Installer/Professional | Not needed |
+| Pump Disable | Customer/Private or <br/> Installer/Professional | Required |
+| Pressure Setpoint | Customer/Private or <br/> Installer/Professional | Required |
+| Reset partial flow counter | Customer/Private or <br/> Installer/Professional | Required |
+| Reset or Erase errors | Installer/Professional | Required |
+| Restart or Reboot | Installer/Professional | Required |
+
+Many other entities that are only expected to be configured once during installation of the pump are available read-only for diagnostics and cannot be modified via this Home Assistant 
+integration. In role Installer/Professional and with a subscription more of these are visible.
+
 
 ![controller_config](documentation/entity_config.png)
-
-
-## Sensors
-Sensors are registered to each device as `sensor.{device_name}_{sensor_name}` with an easy to read friendly name of `sensor_name`. 
-  
-![sensor](documentation/sensor_detail.png)
 
 
 # Troubleshooting

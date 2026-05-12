@@ -127,20 +127,21 @@ class DabPumpsEntityHelper:
 
         # Blacklisted keys that would otherwise be included by whitelisted groups below:
         keys_blacklist = [
+            'FactoryDefault',           # group: System Management
             'IdentifyDevice',           # group: System Management
             'Identify',                 # group: Advanced
-            'Reboot',                   # group: Advanced
             'UpdateSystem',             # group: Advanced
             'UpdateFirmware',           # group: Firmware Updates
             'UpdateProgress',           # group: Firmware Updates
+            'ForceDownload',            # group: Firmware Updates
             'PW_ModifyPassword',        # group: Technical Assistance
         ]
         
         groups_whitelist = []
         groups_blacklist = [
             'Debug',
+            'Errors',
             'ModbusDevice',
-            'Errors'
         ]
 
         # Groups that do not need a subscription to change an entity value
@@ -185,13 +186,14 @@ class DabPumpsEntityHelper:
         # And needs to be in group 'Extra Comfort' or be a specific key
         # that would otherwise be excluded as group
         keys_config = [
-            'PumpDisable',
             'RF_EraseHistoricalFault',
         ]
         groups_config = [
             'Extra Comfort',
             'Setpoint',
             'System Management',
+            'Advanced',
+            # 'I/O', 'IO',    # To be added in future release
         ]
         is_config = False
         if self._coordinator.user_role in params.change:
