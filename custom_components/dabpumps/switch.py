@@ -38,10 +38,10 @@ from .const import (
 from .coordinator import (
     DabPumpsCoordinator,
 )
-from .entity_base import (
+from .entity import (
     DabPumpsEntity,
 )
-from .entity_helper import (
+from .helper import (
     DabPumpsEntityHelper,
 )
 
