@@ -206,10 +206,10 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_role(self, user_input=None) -> FlowResult:
         """Third step in config flow to check user role"""
         
-        role_old = next( (install.role for install in self._install_map.values() if install.id == self._install_id), DabPumpsUserRole.CUSTOMER)
+        role_old = next( (install.role for install in self._install_map.values() if install.id == self._install_id), DabPumpsUserRole.CUSTOMER_FREE)
         _LOGGER.debug(f"Step role - detected current role {role_old}")
 
-        if role_old == DabPumpsUserRole.INSTALLER:
+        if role_old not in [DabPumpsUserRole.CUSTOMER, DabPumpsUserRole.CUSTOMER_FREE]:
             _LOGGER.debug(f"Step role - auto keep current role {role_old}")
             user_input = {
                 CONF_ROLE_MENU: "KEEP"
@@ -225,7 +225,9 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     pass
             
                 case "update_role":
-                    # Try and update role to installer. Ignore if this fails
+                    # Try and update role from customer to installer (regardless of subscription or free). 
+                    # Ignore if this fails
+                    role_old = DabPumpsUserRole.CUSTOMER
                     role_new = DabPumpsUserRole.INSTALLER
                     await self.async_try_update_role(role_old, role_new)
 

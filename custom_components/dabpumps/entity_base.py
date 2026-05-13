@@ -8,22 +8,11 @@ from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import EntityCategory
-from homeassistant.const import PERCENTAGE
-from homeassistant.const import REVOLUTIONS_PER_MINUTE
-from homeassistant.const import UnitOfInformation
-from homeassistant.const import UnitOfElectricCurrent
-from homeassistant.const import UnitOfElectricPotential
-from homeassistant.const import UnitOfEnergy
-from homeassistant.const import UnitOfLength
-from homeassistant.const import UnitOfPower
-from homeassistant.const import UnitOfPressure
-from homeassistant.const import UnitOfVolume
-from homeassistant.const import UnitOfVolumeFlowRate
-from homeassistant.const import UnitOfTemperature
-from homeassistant.const import UnitOfTime
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .const import (
+    DOMAIN,
     ATTR_STORED_CODE,
     ATTR_STORED_VALUE,
     ATTR_STORED_TS,
@@ -31,6 +20,12 @@ from .const import (
 )
 from .coordinator import (
     DabPumpsCoordinator,
+)
+from .data import (
+    ParamCategory,
+    ParamInfo,
+    ParamStateClass,
+    UnitInfo,
 )
 from pydabpumps import (
     DabPumpsDevice,
@@ -79,7 +74,8 @@ class DabPumpsEntity(RestoreEntity):
         self._coordinator = coordinator
         self._device = device
         self._params = params
-        self._attr_unit = self._convert_to_unit()
+        self._param_info = ParamInfo.find(params.group, params.key)
+        self._unit_info = UnitInfo.find_by_dabpumps_unit(params.unit)
 
         # The unique identifiers for this sensor within Home Assistant
         self._status_key = status_key      # Key for lookup of status in the API
@@ -89,6 +85,10 @@ class DabPumpsEntity(RestoreEntity):
         self._attr_has_entity_name = True
         self._attr_name = params.name
         self._name = params.key
+
+        self._attr_device_info = DeviceInfo(
+            identifiers = {(DOMAIN, coordinator.create_id(self._device.serial))},
+        )
 
         # Attributes to be restored in the next HA run
         self._status_code: str = None
@@ -172,157 +172,36 @@ class DabPumpsEntity(RestoreEntity):
 
         return changed
 
-    
-    def _convert_to_unit(self):
-        """Convert from DAB Pumps units to Home Assistant units"""
-        match self._params.unit:
-            case '°C'|'Ã‚Â°C':  return UnitOfTemperature.CELSIUS
-            case '°F'|'Ã‚Â°F':  return UnitOfTemperature.FAHRENHEIT
-            case 'bar':         return UnitOfPressure.BAR
-            case 'psi':         return UnitOfPressure.PSI
-            case 'mc':          return UnitOfVolume.CUBIC_METERS
-            case 'l':           return UnitOfVolume.LITERS
-            case 'l/min':       return UnitOfVolumeFlowRate.LITERS_PER_MINUTE
-            case 'gall':        return UnitOfVolume.GALLONS
-            case 'gall/min':    return UnitOfVolumeFlowRate.GALLONS_PER_MINUTE
-            case 'gpm':         return UnitOfVolumeFlowRate.GALLONS_PER_MINUTE
-            case 'cm':          return UnitOfLength.CENTIMETERS
-            case 'inch':        return UnitOfLength.INCHES
-            case 'ms':          return UnitOfTime.MILLISECONDS
-            case 's':           return UnitOfTime.SECONDS
-            case 'secondi':     return UnitOfTime.SECONDS
-            case 'min':         return UnitOfTime.MINUTES
-            case 'h':           return UnitOfTime.HOURS
-            case 'rpm':         return REVOLUTIONS_PER_MINUTE
-            case 'B':           return UnitOfInformation.BYTES
-            case 'kB':          return UnitOfInformation.KILOBYTES
-            case 'KB':          return UnitOfInformation.KILOBYTES
-            case 'MByte':       return UnitOfInformation.MEGABYTES
-            case '%':           return PERCENTAGE
-            case 'V':           return UnitOfElectricPotential.VOLT
-            case 'A':           return UnitOfElectricCurrent.AMPERE
-            case 'W':           return UnitOfPower.WATT
-            case 'kW':          return UnitOfPower.KILO_WATT
-            case 'kWh':         return UnitOfEnergy.KILO_WATT_HOUR
-            case 'Address':     return None
-            case 'SW. Vers.':   return None
-            case '':            return None
-            case 'None' | None: return None
-            
-            case _:
-                _LOGGER.warning(f"DAB Pumps encountered a unit or measurement '{self._params.unit}' for '{self._params.key}' that may not be supported by Home Assistant. Please contact the integration developer to have this resolved.")
-                return self._params.unit
-    
-    
+
     def get_unit(self):
-        return self._attr_unit
+        """Return Home Assistant compatible unit of measurement"""
+        return self._unit_info.ha_unit
         
     
     def get_icon(self):
-        """Convert from HA unit to icon"""
-        match self._attr_unit:
-            case '°C':      return 'mdi:thermometer'
-            case '°F':      return 'mdi:thermometer'
-            case 'bar':     return 'mdi:water-pump'
-            case 'psi':     return 'mdi:water-pump'
-            case 'm³':      return 'mdi:water'
-            case 'L':       return 'mdi:water'
-            case 'gal':     return 'mdi:water'
-            case 'L/min':   return 'mdi:hydro-power'
-            case 'gal/min': return 'mdi:hydro-power'
-            case 'mm':      return 'mdi:waves-arrow-up'
-            case 'cm':      return 'mdi:waves-arrow-up'
-            case 'in':      return 'mdi:waves-arrow-up'
-            case 's':       return 'mdi:timer-sand'
-            case 'min':     return 'mdi:timer-sand'
-            case 'h':       return 'mdi:timer'
-            case 'B':       return 'mdi:memory'
-            case 'kB':      return 'mdi:memory'
-            case 'MB':      return 'mdi:memory'
-            case 'kB/s':    return 'mdi:memory-arrow-down'
-            case '%':       return 'mdi:percent'
-            case 'A':       return 'mdi:lightning-bolt'
-            case 'V':       return 'mdi:lightning-bolt'
-            case 'W':       return 'mdi:power-plug'
-            case 'kW':      return 'mdi:power-plug'
-            case 'Wh':      return 'mdi:lightning'
-            case 'kWh':     return 'mdi:lightning'
-            case _:         return None
+        """Derive a suitable icon from the unit of measurement"""
+        return self._unit_info.icon
     
     
     def get_number_device_class(self):
-        """Convert from HA unit to NumberDeviceClass"""
+        """Derive the number entity device class from the param type or param unit of measurement"""
         if self._params.type == 'enum':
             return NumberDeviceClass.ENUM
-            
-        match self._attr_unit:
-            case '°C':      return NumberDeviceClass.TEMPERATURE
-            case '°F':      return NumberDeviceClass.TEMPERATURE
-            case 'bar':     return NumberDeviceClass.PRESSURE
-            case 'psi':     return NumberDeviceClass.PRESSURE
-            case 'm³':      return NumberDeviceClass.WATER
-            case 'L':       return NumberDeviceClass.WATER
-            case 'gal':     return NumberDeviceClass.WATER
-            case 'l/m':     return NumberDeviceClass.VOLUME_FLOW_RATE
-            case 'gal/m':   return NumberDeviceClass.VOLUME_FLOW_RATE
-            case 'mm':      return NumberDeviceClass.DISTANCE
-            case 'cm':      return NumberDeviceClass.DISTANCE
-            case 'in':      return NumberDeviceClass.DISTANCE
-            case 's':       return NumberDeviceClass.DURATION
-            case 'min':     return None
-            case 'h':       return None
-            case 'rpm':     return None
-            case 'B':       return NumberDeviceClass.DATA_SIZE
-            case 'kB':      return NumberDeviceClass.DATA_SIZE
-            case 'MB':      return NumberDeviceClass.DATA_SIZE
-            case 'kB/s':    return NumberDeviceClass.DATA_RATE
-            case '%':       return NumberDeviceClass.POWER_FACTOR
-            case 'A':       return NumberDeviceClass.CURRENT
-            case 'V':       return NumberDeviceClass.VOLTAGE
-            case 'W':       return NumberDeviceClass.POWER
-            case 'kW':      return NumberDeviceClass.POWER
-            case 'Wh':      return NumberDeviceClass.ENERGY
-            case 'kWh':     return NumberDeviceClass.ENERGY
-            case _:         return None
+        else:
+            return self._unit_info.num_cls
     
     
     def get_sensor_device_class(self):
-        """Convert from HA unit to SensorDeviceClass"""
+        """Derive the sensor entity device class from the param type or param unit of measurement"""
         if self._params.type == 'enum':
             return SensorDeviceClass.ENUM
-            
-        match self._attr_unit:
-            case '°C':      return SensorDeviceClass.TEMPERATURE
-            case '°F':      return SensorDeviceClass.TEMPERATURE
-            case 'bar':     return SensorDeviceClass.PRESSURE
-            case 'psi':     return SensorDeviceClass.PRESSURE
-            case 'm³':      return SensorDeviceClass.WATER
-            case 'L':       return SensorDeviceClass.WATER
-            case 'gal':     return SensorDeviceClass.WATER
-            case 'l/min':   return SensorDeviceClass.VOLUME_FLOW_RATE
-            case 'gal/min': return SensorDeviceClass.VOLUME_FLOW_RATE
-            case 'mm':      return SensorDeviceClass.DISTANCE
-            case 'cm':      return SensorDeviceClass.DISTANCE
-            case 'in':      return SensorDeviceClass.DISTANCE
-            case 's':       return SensorDeviceClass.DURATION
-            case 'min':     return None
-            case 'h':       return None
-            case 'rpm':     return None
-            case 'B':       return SensorDeviceClass.DATA_SIZE
-            case 'kB':      return SensorDeviceClass.DATA_SIZE
-            case 'MB':      return SensorDeviceClass.DATA_SIZE
-            case 'kB/s':    return SensorDeviceClass.DATA_RATE
-            case '%':       return SensorDeviceClass.POWER_FACTOR
-            case 'A':       return SensorDeviceClass.CURRENT
-            case 'V':       return SensorDeviceClass.VOLTAGE
-            case 'W':       return SensorDeviceClass.POWER
-            case 'kW':      return SensorDeviceClass.POWER
-            case 'Wh':      return SensorDeviceClass.ENERGY
-            case 'kWh':     return SensorDeviceClass.ENERGY
-            case _:         return None
+        else:
+            return self._unit_info.sen_cls   
     
     
     def get_sensor_state_class(self):
+        """Derive the sensor state class from the param type or param info"""
+
         # Return StateClass=None for Enum or Label
         if self._params.type != 'measure':
             return None
@@ -331,132 +210,31 @@ class DabPumpsEntity(RestoreEntity):
         if self._params.change:
             return None
         
-        # Return StateClass=None for diagnostics kind of parameters
-        groups_none = ['Modbus']
-        if self._params.group in groups_none:
-            return None
-        
-        # Return StateClass=None for some specific fields
-        keys_none = [
-            'Last_Period_Flow_Counter',
-            'Last_Period_Flow_Counter_Gall',
-            'Last_Period_Energy_Counter',
-            'Fluid_Remain',
-            'Fluid_Remain_inch',
-        ]
-        if self._params.key in keys_none:
-            return None
-            
-        keys_t = []
-        keys_ti = [
-            'Actual_Period_Flow_Counter',
-            'Actual_Period_Flow_Counter_Gall',
-            'Actual_Period_Energy_Counter',
-            'FCp_Partial_Delivered_Flow_Gall',
-            'FCp_Partial_Delivered_Flow_mc',
-            'FCt_Total_Delivered_Flow_Gall',
-            'FCt_Total_Delivered_Flow_mc',
-            'HO_PowerOnHours',
-            'HO_PumpRunHours',
-            'PartialEnergy',
-            'SO_PowerOnSeconds',
-            'SO_PumpRunSeconds',
-            'StartNumber',
-            'TotalEnergy',
-            'UpTime',
-            'WlanRx',
-            'WlanTx',
-        ]
-        
-        if self._params.key in keys_t:
-            return SensorStateClass.TOTAL
-            
-        elif self._params.key in keys_ti:
-            return SensorStateClass.TOTAL_INCREASING
-            
-        else:
-            return SensorStateClass.MEASUREMENT
+        # Return StateClass=None, TOTAL, TOTAL_INCREASING or MEASUREMENT depending param info
+        # (controlled by group and key)
+        match self._param_info.cls:
+            case ParamStateClass.NONE:          return None
+            case ParamStateClass.TOTAL:         return SensorStateClass.TOTAL
+            case ParamStateClass.TOTAL_INC:     return SensorStateClass.TOTAL_INCREASING
+            case ParamStateClass.MEASUREMENT:   return SensorStateClass.MEASUREMENT
+            case _:                             return SensorStateClass.MEASUREMENT
     
     
     def get_entity_category(self):
-        
-        # Return None for some specific groups we always want as sensors 
-        # even if they would fail some of the tests below
-        groups_none = [
-            'I/O', 
-        ]
-        if self._params.group in groups_none:
-            return None
-            
-        # Return None for params in groups associated with Control
-        # and that a customer is allowed to change.
-        # Leads to the entities being added under 'Controls'
-        groups_control = [
-            'Extra Comfort',
-        ]
-        if self._params.group in groups_control and 'C' in self._params.change:
-            return None
-        
-        # Return CONFIG for params in groups associated with configuration
-        # and that an installer is allowed to change
-        # Leads to the entities being added under 'Configuration'
-        # Typically intended for restart or update functionality
-        groups_config = [
-            'Setpoint'
-        ]
-        if self._params.group in groups_config and 'I' in self._params.change and self._coordinator.user_role in self._params.change:
-            return EntityCategory.CONFIG
+        """Derive the sensor state class from the param info (controlled by group and key)"""
 
-        # Return CONFIG for some specific entries associated with others that are CONFIG
-        keys_config = [
-            'PumpDisable',
-        ]
-        if self._params.key in keys_config and 'I' in self._params.change and self._coordinator.user_role in self._params.change:
-            return EntityCategory.CONFIG
-            
-        # Return DIAGNOSTIC for params in groups associated with diagnostics
-        groups_diag = [
-            'Debug', 
-            'Errors',
-            'Extra Comfort', 
-            'Firmware Updates', 
-            'I/O', 
-            'Installer', 
-            'Modbus', 
-            'ModbusDevice', 
-            'PLC', 
-            'System Management',
-            'Technical Assistance',
-            'Version',
-        ]
-        if self._params.group in groups_diag:
-            return EntityCategory.DIAGNOSTIC
-            
-        # Return DIAGNOSTIC for some specific entries associated with others that are DIAGNOSTIC
-        keys_diag = [
-            'LastErrorOccurrency',
-            'LastErrorTimePowerOn',
-        ]
-        if self._params.key in keys_diag:
-            return EntityCategory.DIAGNOSTIC
-        
-        # Return DIAGNOSTIC for params that are a setting, unlikely to change often
-        if self._params.change:
-            return EntityCategory.DIAGNOSTIC
-            
-        # Return DIAGNOSTIC for params that are not visible for Customer or Installer (i.e. only visible for Service or R&D)
-        if 'C' not in self._params.view and 'I' not in self._params.view:
-            return EntityCategory.DIAGNOSTIC
-        
-        if 'C' not in self._params.view and self._params.family == 'gear':
-            return EntityCategory.DIAGNOSTIC
-        
-        # Return None for all others
-        return None
+        match self._param_info.cat:
+            case ParamCategory.SENSOR:          return None
+            case ParamCategory.CONTROL:         return None            
+            case ParamCategory.CONFIG:          return EntityCategory.CONFIG if self._coordinator.user_role in self._params.change else EntityCategory.DIAGNOSTIC
+            case ParamCategory.DIAGNOSTICS:     return EntityCategory.DIAGNOSTIC
+            case _:                             return None
     
     
     def get_number_step(self):
-        match self._attr_unit:
+        """Determine a suitable number entity step size"""
+        
+        match self._unit_info.ha_unit:
             case 's':
                 candidates = [3600, 60, 1]
             case 'min':

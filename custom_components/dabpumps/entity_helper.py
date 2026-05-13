@@ -1,5 +1,7 @@
 import logging
 
+from dataclasses import dataclass
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
@@ -17,33 +19,24 @@ from .coordinator import (
     DabPumpsCoordinatorFactory,
     DabPumpsCoordinator
 )
+from .data import (
+    ParamInfo,
+)
 
 
 _LOGGER = logging.getLogger(__name__)
 
 
-class DabPumpsEntityHelperFactory:
+class DabPumpsEntityHelper:
+    """My custom helper to provide common functions."""
     
-    @staticmethod
-    def create(hass: HomeAssistant, config_entry: ConfigEntry):
+    def __init__(self, hass: HomeAssistant, config_entry: ConfigEntry):
         """
         Get entity helper for a config entry.
         The entry is short lived (only during init) and does not contain state data,
         therefore no need to cache it in hass.data
         """
-    
-        # Get an instance of the DabPumpsCoordinator for this install_id
-        coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
-    
-        # Get an instance of our helper
-        return DabPumpsEntityHelper(hass, coordinator)
-
-
-class DabPumpsEntityHelper:
-    """My custom helper to provide common functions."""
-    
-    def __init__(self, hass: HomeAssistant, coordinator: DabPumpsCoordinator):
-        self._coordinator = coordinator
+        self._coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
         self._entity_registry = entity_registry.async_get(hass)
         
     
@@ -58,8 +51,6 @@ class DabPumpsEntityHelper:
             # If data returns False or is empty, log an error and return
             _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
             return
-        
-        other_platforms = [p for p in PLATFORMS if p != target_platform]
         
         _LOGGER.debug(f"Create {target_platform} entities for installation '{self._coordinator.install_name}'")
 
@@ -82,13 +73,9 @@ class DabPumpsEntityHelper:
             if not params:
                 continue
 
-            if not self._is_entity_whitelisted(params):
-                # Some statuses (error1...error64) are deliberately skipped
-                continue
-            
             platform = self._get_entity_platform(params)
             if platform != target_platform:
-                # This status will be handled via another platform
+                # This status will be handled via another platform or is completely suppressed
                 continue
                 
             # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
@@ -109,100 +96,23 @@ class DabPumpsEntityHelper:
         _LOGGER.info(f"Add {len(entities)} {target_platform} entities for installation '{self._coordinator.install_name}'")
         if entities:
             async_add_entities(entities)
-    
-    
-    def _is_entity_whitelisted(self, params):
-        """
-        Determine whether an entry is whitelisted and should be added as sensor/binary sensor/number/select/switch
-        Or is blacklistred and should be ignored
-        """
-        
-        # Whitelisted keys that would otherwise be excluded by blacklisted groups below:
-        keys_whitelist = [
-            'RamUsed',                  # group: Debug
-            'RamUsedMax',               # group: Debug
-            'LatestError',              # group: Errors
-            'RF_EraseHistoricalFault',  # group: Errors
-        ]
 
-        # Blacklisted keys that would otherwise be included by whitelisted groups below:
-        keys_blacklist = [
-            'FactoryDefault',           # group: System Management
-            'IdentifyDevice',           # group: System Management
-            'Identify',                 # group: Advanced
-            'UpdateSystem',             # group: Advanced
-            'UpdateFirmware',           # group: Firmware Updates
-            'UpdateProgress',           # group: Firmware Updates
-            'ForceDownload',            # group: Firmware Updates
-            'PW_ModifyPassword',        # group: Technical Assistance
-        ]
-        
-        groups_whitelist = []
-        groups_blacklist = [
-            'Debug',
-            'Errors',
-            'ModbusDevice',
-        ]
-
-        # Groups that do not need a subscription to change an entity value
-        groups_no_subscr = [
-            'Extra Comfort',
-        ]
-
-        # First check if entity is allowed to be viewed according to user_role
-        if self._coordinator.user_role not in params.view:
-            return False
-        
-        # For a changable entity we need to check the subscription
-        if self._coordinator.user_role in params.change:
-            if params.group not in groups_no_subscr and not self._coordinator.install_subscription_valid:
-                return False
-
-        # Then check individual keys
-        if params.key in keys_whitelist:
-            return True
-        
-        if params.key in keys_blacklist:
-            return False
-        
-        # Then check groups
-        if params.group in groups_whitelist:
-            return True
-
-        if params.group in groups_blacklist:
-            return False
-        
-        # If not blacklisted by any rule above, then it is whitelisted
-        return True
-        
         
     def _get_entity_platform(self, params):
         """
         Determine what platform an entry should be added into
         """
         
-        # Is it a button/switch/select/number config or control entity? 
-        # Needs to have change rights for the user role
-        # And needs to be in group 'Extra Comfort' or be a specific key
-        # that would otherwise be excluded as group
-        keys_config = [
-            'RF_EraseHistoricalFault',
-        ]
-        groups_config = [
-            'Extra Comfort',
-            'Setpoint',
-            'System Management',
-            'Advanced',
-            # 'I/O', 'IO',    # To be added in future release
-        ]
-        is_config = False
-        if self._coordinator.user_role in params.change:
-            if params.key in keys_config:
-                is_config = True
-            elif params.group in groups_config:
-                is_config = True
-        
-        if is_config:
+        # Find the datapoint containing info about how to handle this param
+        info = ParamInfo.find(params.group, params.key)
+
+        # Could it be a button/switch/select/number config or control entity? 
+        # Needs to have:
+        # - change rights for the user role and
+        # - allowed as modifyable entity in the Datapoints
+        if info is not None and info.vis and info.mod and self._coordinator.user_role in params.change:
+
+            # Is it a a button/switch/select ?
             if params.type == 'enum':
                 # With exactly 1 possible value that are of 'press' type it becomes a button
                 if len(params.values or []) == 1:
@@ -225,18 +135,23 @@ class DabPumpsEntityHelper:
                     return Platform.NUMBER
         
         # Only view rights or does not fit in one of the modifyable entities
-        if params.type == 'enum':
-            # Suppress buttons if we only have view rights
-            if len(params.values or []) == 1:
-                if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
-                    return None
+        if info is not None and info.vis and self._coordinator.user_role in params.view:
+
+            if params.type == 'enum':
+                # Suppress buttons if we only have view rights
+                if len(params.values or []) == 1:
+                    if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
+                        return None
+        
+                # Is it a binary sensor?
+                if len(params.values or []) == 2:
+                    if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
+                        return Platform.BINARY_SENSOR
     
-            # Is it a binary sensor?
-            if len(params.values or []) == 2:
-                if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
-                    return Platform.BINARY_SENSOR
-    
-        # Everything else will become a regular sensor
-        return Platform.SENSOR
+            # Everything else will become a regular sensor
+            return Platform.SENSOR
+        
+        # Suppress all params for which we do not have view rights
+        return None
     
 

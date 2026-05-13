@@ -1,32 +1,16 @@
-import asyncio
 import logging
-import math
 
-from homeassistant import config_entries
-from homeassistant import exceptions
 from homeassistant.components.time import TimeEntity
 from homeassistant.components.time import ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EntityCategory
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.exceptions import IntegrationError
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity_registry import async_get
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import datetime
 from datetime import time
-from datetime import timezone
 from datetime import timedelta
-
-from collections import defaultdict
-from collections import namedtuple
 
 from pydabpumps import (
     DabPumpsDevice,
@@ -35,7 +19,6 @@ from pydabpumps import (
 )
 
 from .const import (
-    DOMAIN,
     STATUS_VALIDITY_PERIOD,
     utcnow,
 )
@@ -46,7 +29,6 @@ from .entity_base import (
     DabPumpsEntity,
 )
 from .entity_helper import (
-    DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
 )
 
@@ -58,8 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     """
     Setting up the adding and updating of number entities
     """
-    helper = DabPumpsEntityHelperFactory.create(hass, config_entry)
-    await helper.async_setup_entry(Platform.TIME, DabPumpsTime, async_add_entities)
+    await DabPumpsEntityHelper(hass, config_entry).async_setup_entry(Platform.TIME, DabPumpsTime, async_add_entities)
 
 
 class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
@@ -100,10 +81,6 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         if attr_max:
             self._attr_native_max_value = attr_max
         self._attr_native_step = attr_step
-        
-        self._attr_device_info = DeviceInfo(
-            identifiers = {(DOMAIN, coordinator.create_id(self._device.serial))},
-        )
 
         # Create all value related attributes
         self._update_attributes(status, force=True)

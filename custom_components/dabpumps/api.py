@@ -414,6 +414,16 @@ class DabPumpsApiWrap(AsyncDabPumps):
             await super().fetch_install_details(install_id)
             self._fetch_ts[context] = utcnow()
 
+            # Temporary sanity check, to confirm the Role and Subscription work as we expect
+            install = self._install_map.get(install_id)
+
+            if install.subscr_ts is not None and install.subscr_ts > utcnow():
+                if install.role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE]:
+                    _LOGGER.warning(f"Detected unexpected role '{install.role}' while subscription is valid. Please contact the author of the Dab Pumps integration")
+            else:
+                if install.role in [DabPumpsUserRole.CUSTOMER, DabPumpsUserRole.INSTALLER]:
+                    _LOGGER.warning(f"Detected unexpected role '{install.role}' while subscription is expired. Please contact the author of the Dab Pumps integration")
+
         except Exception as e:
             # Ignore issues if this is just a periodic update
             if ignore:

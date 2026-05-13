@@ -1,10 +1,6 @@
-import asyncio
 import logging
-import math
 import voluptuous as vol
 
-from homeassistant import config_entries
-from homeassistant import exceptions
 from homeassistant.components.binary_sensor import PLATFORM_SCHEMA as PARENT_PLATFORM_SCHEMA
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.binary_sensor import BinarySensorDeviceClass
@@ -12,28 +8,14 @@ from homeassistant.components.binary_sensor import ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
 from homeassistant.const import CONF_UNIQUE_ID
-from homeassistant.const import EntityCategory
 from homeassistant.const import Platform
-from homeassistant.const import STATE_ON
-from homeassistant.const import STATE_OFF
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.exceptions import IntegrationError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.entity_registry import async_get
-from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import datetime
-from datetime import timezone
 from datetime import timedelta
-
-from collections import defaultdict
-from collections import namedtuple
 
 from pydabpumps import (
     DabPumpsDevice,
@@ -42,7 +24,6 @@ from pydabpumps import (
 )
 
 from .const import (
-    DOMAIN,
     BINARY_SENSOR_VALUES_ON,
     BINARY_SENSOR_VALUES_OFF,
     STATUS_VALIDITY_PERIOD,
@@ -55,7 +36,6 @@ from .entity_base import (
     DabPumpsEntity,
 )
 from .entity_helper import (
-    DabPumpsEntityHelperFactory,
     DabPumpsEntityHelper,
 )
 
@@ -74,8 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     """
     Setting up the adding and updating of binary_sensor entities
     """
-    helper = DabPumpsEntityHelperFactory.create(hass, config_entry)
-    await helper.async_setup_entry(Platform.BINARY_SENSOR, DabPumpsBinarySensor, async_add_entities)
+    await DabPumpsEntityHelper(hass, config_entry).async_setup_entry(Platform.BINARY_SENSOR, DabPumpsBinarySensor, async_add_entities)
 
 
 class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity):
@@ -108,10 +87,6 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         # update creation-time only attributes
         self._attr_device_class = self._get_device_class()
 
-        self._attr_device_info = DeviceInfo(
-            identifiers = {(DOMAIN, coordinator.create_id(self._device.serial))},
-        )
-
         # Create all value related attributes
         self._update_attributes(status, force=True)
     
@@ -141,6 +116,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
         
+            # Not expired.
             # Use original status.code, not translated status.value to compare
             if status.code in BINARY_SENSOR_VALUES_ON:
                 is_on = True
@@ -149,6 +125,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
             else:
                 is_on = None
         else:
+            # Expired
             is_on = None
             
         # update value if it has changed
@@ -162,6 +139,6 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         return changed
     
     
-    def _get_device_class(self):
+    def _get_device_class(self) -> BinarySensorDeviceClass:
         """Return one of the BinarySensorDeviceClass.xyz or None"""
         return None

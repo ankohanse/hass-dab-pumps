@@ -219,22 +219,26 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
     def user_role(self) -> str:
         # Return the user role for this install_id
         # Note: we only use the first character
-        if self._install_id in self._api.install_map:
-            return self._api.install_map[self._install_id].role[0]
-        else:
-            return DabPumpsUserRole.CUSTOMER[0]
-    
-    
-    @property
-    def install_subscription_valid(self) -> bool:
-        # Return whether the installation has a valid subscription.
-        # Without a subscription most entities can be viewed but not changed (except in group 'extra comfort').
-        subscr_ts = None
-        if self._install_id in self._api.install_map:
-            subscr_ts = self._api.install_map[self._install_id].subscr_ts
-            
-        return subscr_ts is None or subscr_ts > utcnow()
+        if not self._install_id in self._api.install_map:
+            return DabPumpsUserRole.to_char(DabPumpsUserRole.CUSTOMER_FREE)
 
+        install = self._api.install_map[self._install_id]
+        role = install.role
+        subscr_valid = install.subscr_ts is None or install.subscr_ts > utcnow()
+
+        # Downgrade role if subscription is no longer valid.
+        # May not be needed; possibly is already done in role returned from DAB Pumps servers.
+        match role:
+            case DabPumpsUserRole.CUSTOMER: 
+                if not subscr_valid:
+                    role = DabPumpsUserRole.CUSTOMER_FREE
+
+            case DabPumpsUserRole.INSTALLER: 
+                if not subscr_valid:
+                    role = DabPumpsUserRole.INSTALLER_FREE
+
+        return DabPumpsUserRole.to_char(role)               
+    
 
     @property
     def language(self) -> str:
