@@ -312,7 +312,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 hw_version = device.hw_version,
                 sw_version = device.sw_version,
             )
-            valid_ids[device_id] = (DOMAIN, device_id)
+            valid_ids[device.serial] = (DOMAIN, device_id)
 
         # Remember valid device ids so we can do a cleanup of invalid ones later
         self._valid_device_ids = valid_ids
@@ -329,8 +329,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         registered_devices = device_registry.async_entries_for_config_entry(dr, config_entry.entry_id)
 
         for device in registered_devices:
+            _LOGGER.debug(f"async_cleanup_devices - check device ids: {device.identifiers}")
             if all(id not in valid_identifiers for id in device.identifiers):
-                _LOGGER.info(f"Remove obsolete device {next(iter(device.identifiers))} from installation '{self._install_name}'")
                 dr.async_remove_device(device.id)
 
 
@@ -443,9 +443,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         Detect any new devices. Returns True if a reload needs to be triggered else False
         """
 
-        # Get list of device serials in HA device registry and as retrieved from Api
+        # Get list of known device serials and as retrieved from Api
         old_serials: set[str] = set(self._valid_device_ids.keys())
-        api_serials: set[str] = set([ d.serial for d in self._api.device_map.values() if d.install_id == self._install_id ])
+        api_serials: set[str] = set([d.serial for d in self._api.device_map.values() if d.install_id == self._install_id ])
         new_serials: set[str] = api_serials.difference(old_serials)
 
         for new_serial in new_serials:
