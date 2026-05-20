@@ -60,8 +60,8 @@ class DabPumpsCoordinatorFactory:
         """
     
         # Get properties from the config_entry
-        configs = config_entry.data
-        options = config_entry.options
+        configs = config_entry.data or {}
+        options = config_entry.options or {}
 
         username = configs.get(CONF_USERNAME, None)
         password = configs.get(CONF_PASSWORD, None)
@@ -406,10 +406,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Set an entity param via the API.
         """
-        status = self._api.status_map.get(status_key)
+        status = self._api.status_map.get(status_key) if self._api.status_map is not None else None
         if not status:
-            # Not found
-            return None
+            return None # Not found
 
         # update the remote value
         success = await self._api.async_change_device_status(status, code=code, value=value)
@@ -448,8 +447,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         new_serials: set[str] = api_serials.difference(old_serials)
 
         for new_serial in new_serials:
-            new_device = self._api.device_map.get(new_serial)
-            _LOGGER.info(f"Found newly added device {new_device.serial} ({new_device.name}) for installation '{self._install_name}'. Trigger reload of integration.")
+            new_device = next( (d for d in self._api.device_map.values() if d.serial == new_serial), None)
+            if new_device is not None:
+                _LOGGER.info(f"Found newly added device {new_device.serial} ({new_device.name}) for installation '{self._install_name}'. Trigger reload of integration.")
             return True
         
         return False

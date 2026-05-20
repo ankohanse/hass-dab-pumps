@@ -415,7 +415,9 @@ class DabPumpsApiWrap(AsyncDabPumps):
             self._fetch_ts[context] = utcnow()
 
             # Temporary sanity check, to confirm the Role and Subscription work as we expect
-            install = self._install_map.get(install_id)
+            install = self._install_map.get(install_id) if self._install_map is not None else None
+            if install is None:
+                return
 
             if install.subscr_ts is not None and install.subscr_ts > utcnow():
                 if install.role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE]:

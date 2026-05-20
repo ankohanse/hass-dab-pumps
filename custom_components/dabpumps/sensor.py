@@ -89,10 +89,11 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
 
         # find the correct status corresponding to this sensor
         (_, _, status_map) = self._coordinator.data
-        status = status_map.get(self._status_key)
-        if not status:
+        
+        status = status_map.get(self._status_key) if status_map is not None else None
+        if status is None:
             return
-
+        
         # Update any attributes
         if self._update_attributes(status):
             self.async_write_ha_state()

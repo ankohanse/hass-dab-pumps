@@ -103,8 +103,9 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
 
         # find the correct status corresponding to this entity
         (_, _, status_map) = self._coordinator.data
-        status = status_map.get(self._status_key)
-        if not status:
+        
+        status = status_map.get(self._status_key) if status_map is not None else None
+        if status is None:
             return
 
         # Update any attributes
