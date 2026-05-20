@@ -329,7 +329,6 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         registered_devices = device_registry.async_entries_for_config_entry(dr, config_entry.entry_id)
 
         for device in registered_devices:
-            _LOGGER.debug(f"async_cleanup_devices - check device ids: {device.identifiers}")
             if all(id not in valid_identifiers for id in device.identifiers):
                 dr.async_remove_device(device.id)
 
