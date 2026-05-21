@@ -178,6 +178,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._reload_count: int = 0
         self._reload_time: datetime = utcnow()
         self._reload_delay: int = COORDINATOR_RELOAD_DELAY
+
+        # Properties that are cached for performance
+        self._config_includes_free_account = None
         
 
     @staticmethod
@@ -226,14 +229,47 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         role = install.role
 
         # Downgrade role if subscription is no longer valid.
+        # But only if the device config definitions are aware of the CUSTOMER_FREE and INSTALLER_FREE roles
         subscr_valid = install.subscr_ts is None or install.subscr_ts > utcnow()
-        if not subscr_valid:
+
+        if not subscr_valid and self.device_config_includes_free_account:
             match role: 
                 case DabPumpsUserRole.CUSTOMER: role = DabPumpsUserRole.CUSTOMER_FREE
                 case DabPumpsUserRole.INSTALLER: role = DabPumpsUserRole.INSTALLER_FREE
 
         return DabPumpsUserRole.to_char(role)               
     
+
+    @property
+    def device_config_includes_free_account(self) -> bool:
+        """
+        Returns whether the device config_maps for this installation include
+        information for CUSTOMER_FREE and INSTALLER_FREE accounts.
+        (parsed from raw DAP Server data as of v2026.05.3).
+
+        Once determined, value is cached for performance. Note that it is only used during startup.
+        """
+        if self._config_includes_free_account is not None:
+            return self._config_includes_free_account
+        
+        role_free_chars = (DabPumpsUserRole.to_char(role) for role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE])
+        
+        for device in self._api.device_map.values():
+            if device.install_id != self.install_id:
+                continue
+
+            config = self._api.config_map.get(device.config_id)
+            if not config:
+                continue
+            
+            for param in config.meta_params.values():
+                if any(char in param.view or char in param.change for char in role_free_chars):
+                    self._config_includes_free_account = True
+                    return True
+                
+        self._config_includes_free_account = False
+        return False
+
 
     @property
     def language(self) -> str:
