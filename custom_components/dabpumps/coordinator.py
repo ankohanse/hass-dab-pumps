@@ -224,18 +224,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         install = self._api.install_map[self._install_id]
         role = install.role
-        subscr_valid = install.subscr_ts is None or install.subscr_ts > utcnow()
 
         # Downgrade role if subscription is no longer valid.
-        # May not be needed; possibly is already done in role returned from DAB Pumps servers.
-        match role:
-            case DabPumpsUserRole.CUSTOMER: 
-                if not subscr_valid:
-                    role = DabPumpsUserRole.CUSTOMER_FREE
-
-            case DabPumpsUserRole.INSTALLER: 
-                if not subscr_valid:
-                    role = DabPumpsUserRole.INSTALLER_FREE
+        subscr_valid = install.subscr_ts is None or install.subscr_ts > utcnow()
+        if not subscr_valid:
+            match role: 
+                case DabPumpsUserRole.CUSTOMER: role = DabPumpsUserRole.CUSTOMER_FREE
+                case DabPumpsUserRole.INSTALLER: role = DabPumpsUserRole.INSTALLER_FREE
 
         return DabPumpsUserRole.to_char(role)               
     
