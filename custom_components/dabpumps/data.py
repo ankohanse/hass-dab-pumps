@@ -60,11 +60,9 @@ PARAM_INFOS = [
     PI(grp="Setpoint",             key="",                                vis=True,  mod=True,  cat="conf", cls="meas"),
 
     PI(grp="System Management",    key="FactoryDefault",                  vis=False),
-#    PI(grp="System Management",    key="IdentifyDevice",                  vis=False),
     PI(grp="System Management",    key="PumpDisable",                     vis=True,  mod=True,  cat="conf", cls="meas"),
     PI(grp="System Management",    key="",                                vis=True,  mod=True,  cat="diag", cls="meas"),
 
-#    PI(grp="Advanced",             key="Identify",                        vis=False),
     PI(grp="Advanced",             key="UpdateSystem",                    vis=False),
     PI(grp="Advanced",             key="",                                vis=True,  mod=True,  cat="diag", cls="meas"),
 
@@ -87,7 +85,7 @@ PARAM_INFOS = [
     PI(grp="Status",               key="Actual_Period_Flow_Counter",      vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="Actual_Period_Flow_Counter_Gall", vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="Actual_Period_Energy_Counter",    vis=True,  mod=False, cat="sens", cls="total_inc"),
-    PI(grp="Status",               key="FCp_Partial_Delivered_Flow_Gall", vis=True,  mod=False, cat="sens", cls="total_incti"),
+    PI(grp="Status",               key="FCp_Partial_Delivered_Flow_Gall", vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="FCp_Partial_Delivered_Flow_mc",   vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="FCt_Total_Delivered_Flow_Gall",   vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="FCt_Total_Delivered_Flow_mc",     vis=True,  mod=False, cat="sens", cls="total_inc"),
