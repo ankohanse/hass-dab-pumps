@@ -202,8 +202,13 @@ class DabPumpsStore(Store[dict]):
         """
         Get an item from the store data
         """
-        _LOGGER.debug(f"Try fetch from {self.key}: '{item_key}'")
-        return self._store_data.get(item_key) or item_default
+        item_val = self._store_data.get(item_key)
+        if item_val is not None:
+            _LOGGER.debug(f"Fetched from {self.key}: '{item_key}'")
+            return item_val
+        else:
+            _LOGGER.debug(f"Not found in {self.key}: '{item_key}'. Using default.")
+            return item_default
     
 
     def set(self, item_key: str, item_val: Any):

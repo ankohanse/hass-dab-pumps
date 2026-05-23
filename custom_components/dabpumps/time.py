@@ -66,7 +66,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         # The unique identifiers for this sensor within Home Assistant
         self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
         
-        _LOGGER.debug(f"Create entity '{self.entity_id}'")
+        #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
         # Prepare attributes
         attr_min = int(self._params.min) if self._params.min is not None else None

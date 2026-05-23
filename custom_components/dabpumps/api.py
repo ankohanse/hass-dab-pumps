@@ -528,11 +528,21 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
         if not install_dict or not device_dict or not config_dict or not status_dict:
             raise Exception(f"Not all data found in {self._cache.key}")
-
+        
         self._install_map.update( { k:DabPumpsInstall(**v) for k,v in install_dict.items() } )
         self._device_map.update( { k:DabPumpsDevice(**v) for k,v in device_dict.items() } )
         self._config_map.update( { k:DabPumpsConfig(**v) for k,v in config_dict.items() } )
         self._status_actual_map.update( { k:DabPumpsStatus(**v) for k,v in status_dict.items() } )
+
+        # Api versions before v1.5.0 would encode CUSTOMER and CUSTOMER_FREE both as C instead of C and c.
+        # We known we either only have CUSTOMER (C) or both CUSTOMER and CUSTOMER_FREE (CC but should have been Cc). But never just CUSTOMER_FREE.
+        # Similar for INSTALLER and INSTALLER_FREE (both I instead of I and i).
+        for config in self._config_map.values():
+            for param in config.meta_params.values():
+                if param.view.count('C') > 1: param.view = param.view.replace('C', 'c', 1)
+                if param.view.count('I') > 1: param.view = param.view.replace('I', 'i', 1)
+                if param.change.count('C') > 1: param.change = param.change.replace('C', 'c', 1)
+                if param.change.count('I') > 1: param.change = param.change.replace('I', 'i', 1)
 
 
     def _update_statistics(self, retries: int|None = None, duration: timedelta|None = None, fetch: DabPumpsFetchMethod|None = None):

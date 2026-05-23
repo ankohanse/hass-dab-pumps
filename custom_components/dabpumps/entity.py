@@ -151,7 +151,8 @@ class DabPumpsEntity(RestoreEntity):
                 update_ts = None,
             )
 
-            _LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code}) with ts: {status.status_ts}")
+            # Reduce tracing during startup. Can enable for specific development debugging
+            #_LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code}) with ts: {status.status_ts}")
         
             self._update_attributes(status, force=True)
     

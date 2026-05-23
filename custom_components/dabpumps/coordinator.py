@@ -220,24 +220,40 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
     @property
     def user_role(self) -> str:
-        # Return the user role for this install_id
-        # Note: we only use the first character
+        """
+        Return the user role for this install_id
+        Note: we only use the first character
+        """
         if not self._install_id in self._api.install_map:
             return DabPumpsUserRole.to_char(DabPumpsUserRole.CUSTOMER_FREE)
 
         install = self._api.install_map[self._install_id]
-        role = install.role
-
-        # Downgrade role if subscription is no longer valid.
-        # But only if the device config definitions are aware of the CUSTOMER_FREE and INSTALLER_FREE roles
         subscr_valid = install.subscr_ts is None or install.subscr_ts > utcnow()
 
-        if not subscr_valid and self.device_config_includes_free_account:
-            match role: 
+        if not self.device_config_includes_free_account:
+            # Some (cached) device config definitions are not aware of CUSTOMER_FREE and INSTALLER_FREE roles. Use old roles instead.
+            match install.role: 
+                case DabPumpsUserRole.CUSTOMER_FREE: role = DabPumpsUserRole.CUSTOMER
+                case DabPumpsUserRole.INSTALLER_FREE: role = DabPumpsUserRole.INSTALLER
+                case _: role = None
+
+            if role is not None:
+                _LOGGER.debug(f"Upgrade role from {install.role} to simulate {role} as device config does not support free roles yet")
+                install.role = role
+
+        elif not subscr_valid:
+            # If we do have device config definitions with CUSTOMER_FREE and INSTALLER_FREE roles,
+            # but subscription is no longer valid then downgrade the role.
+            match install.role: 
                 case DabPumpsUserRole.CUSTOMER: role = DabPumpsUserRole.CUSTOMER_FREE
                 case DabPumpsUserRole.INSTALLER: role = DabPumpsUserRole.INSTALLER_FREE
+                case _: role = None
 
-        return DabPumpsUserRole.to_char(role)               
+            if role is not None:
+                _LOGGER.debug(f"Downgrade role from {install.role} to simulate {role} as no subscription detected")
+                install.role = role
+
+        return DabPumpsUserRole.to_char(install.role)               
     
 
     @property
@@ -252,7 +268,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if self._config_includes_free_account is not None:
             return self._config_includes_free_account
         
-        role_free_chars = (DabPumpsUserRole.to_char(role) for role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE])
+        role_free_chars = set(DabPumpsUserRole.to_char(role) for role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE])
         
         for device in self._api.device_map.values():
             if device.install_id != self.install_id:
@@ -266,7 +282,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
                 if any(char in param.view or char in param.change for char in role_free_chars):
                     self._config_includes_free_account = True
                     return True
-                
+
         self._config_includes_free_account = False
         return False
 

@@ -72,7 +72,8 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         # The unique identifiers for this sensor within Home Assistant
         self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
 
-        _LOGGER.debug(f"Create entity '{self.entity_id}'")
+        # Reduce tracing during startup. Can enable for specific development debugging
+        #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
         # update creation-time only attributes
         self._dict = { k: v for k,v in params.values.items() }
