@@ -17,7 +17,7 @@ from .const import (
 )
 from .coordinator import (
     DabPumpsCoordinatorFactory,
-    DabPumpsCoordinator
+    DabPumpsCoordinator,
 )
 from .data import (
     ParamInfo,
@@ -107,9 +107,9 @@ class DabPumpsEntityHelper:
         info = ParamInfo.find(params.group, params.key)
 
         # Could it be a button/switch/select/number config or control entity? 
-        # Needs to have:
-        # - change rights for the user role and
-        # - allowed as modifyable entity in the Datapoints
+        # Needs to have all of:
+        # - allowed as visible and modifyable entity in the Datapoints
+        # - change rights for the user role
         if info is not None and info.vis and info.mod and self._coordinator.user_role in params.change:
 
             # Is it a a button/switch/select ?
@@ -134,8 +134,14 @@ class DabPumpsEntityHelper:
                 else:
                     return Platform.NUMBER
         
-        # Only view rights or does not fit in one of the modifyable entities
-        if info is not None and info.vis and self._coordinator.user_role in params.view:
+        
+        # Could it be a sensor or binary sensor entity? 
+        # Needs to have all of:
+        # - not fit or fall through the tests for a button/switch/select/number config or control entity
+        # - allowed as visible entity in the Datapoints
+        # 
+        # Note: no need to check view rights for the user role; if we get inside this function then we have a status value for the entity
+        if info is not None and info.vis:
 
             if params.type == 'enum':
                 # Suppress buttons if we only have view rights

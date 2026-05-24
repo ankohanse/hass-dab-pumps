@@ -180,6 +180,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         self._reload_delay: int = COORDINATOR_RELOAD_DELAY
 
         # Properties that are cached for performance
+        self._user_role = None
         self._config_includes_free_account = None
         
 
@@ -223,37 +224,44 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         """
         Return the user role for this install_id
         Note: we only use the first character
+
+        Once determined, value is cached for performance. Note that it is only used during startup.
         """
+        if self._user_role is not None:
+            return self._user_role
+        
         if not self._install_id in self._api.install_map:
-            return DabPumpsUserRole.to_char(DabPumpsUserRole.CUSTOMER_FREE)
+            return DabPumpsUserRole.to_char(DabPumpsUserRole.CUSTOMER_FREE)     # should not happen, don't cache
 
         install = self._api.install_map[self._install_id]
-        subscr_valid = install.subscr_ts is None or install.subscr_ts > utcnow()
+        self._user_role = DabPumpsUserRole.to_char(install.role)
 
+        # In some specific situations we deviate from the received role:
         if not self.device_config_includes_free_account:
             # Some (cached) device config definitions are not aware of CUSTOMER_FREE and INSTALLER_FREE roles. Use old roles instead.
-            match install.role: 
-                case DabPumpsUserRole.CUSTOMER_FREE: role = DabPumpsUserRole.CUSTOMER
-                case DabPumpsUserRole.INSTALLER_FREE: role = DabPumpsUserRole.INSTALLER
-                case _: role = None
+            upgrade_reason = "as device config does not support free roles yet"
 
-            if role is not None:
-                _LOGGER.debug(f"Upgrade role from {install.role} to simulate {role} as device config does not support free roles yet")
-                install.role = role
+        elif install.subscr_ts is None:
+            # value is seen after H2D login, while there is a DabLive or DConnect subscription
+            upgrade_reason = "as valid DConnect or DabLive subscription is assumed" 
 
-        elif not subscr_valid:
-            # If we do have device config definitions with CUSTOMER_FREE and INSTALLER_FREE roles,
-            # but subscription is no longer valid then downgrade the role.
-            match install.role: 
-                case DabPumpsUserRole.CUSTOMER: role = DabPumpsUserRole.CUSTOMER_FREE
-                case DabPumpsUserRole.INSTALLER: role = DabPumpsUserRole.INSTALLER_FREE
-                case _: role = None
+        elif install.subscr_ts > utcnow():
+            # or subscription is valid.
+            upgrade_reason = "as valid subscription is detected" 
+        
+        else:
+            upgrade_reason = None
+            
+        match install.role: 
+            case DabPumpsUserRole.CUSTOMER_FREE: upgrade_role = DabPumpsUserRole.CUSTOMER
+            case DabPumpsUserRole.INSTALLER_FREE: upgrade_role = DabPumpsUserRole.INSTALLER
+            case _: upgrade_role = None
 
-            if role is not None:
-                _LOGGER.debug(f"Downgrade role from {install.role} to simulate {role} as no subscription detected")
-                install.role = role
+        if upgrade_reason is not None and upgrade_role is not None:
+            _LOGGER.debug(f"Upgrade role from {install.role} to simulate {upgrade_role} {upgrade_reason}")
+            self._user_role = DabPumpsUserRole.to_char(upgrade_role)
 
-        return DabPumpsUserRole.to_char(install.role)               
+        return self._user_role
     
 
     @property
