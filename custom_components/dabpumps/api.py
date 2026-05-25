@@ -162,8 +162,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         self._diag_api_counters: dict[str, int] = {}
         self._diag_api_history: list[DabPumpsHistoryItem] = []
         self._diag_api_details: dict[str, DabPumpsHistoryDetail] = {}
-        self._diag_api_data: dict[str, Any] = {}
-
+        
         self._diag_retries: dict[int, int] = { n: 0 for n in range(API_RETRY_ATTEMPTS) }
         self._diag_durations: dict[int, int] = { n: 0 for n in range(10) }
         self._diag_fetch: dict[str, int] = { n.name: 0 for n in DabPumpsFetchMethod }
@@ -576,60 +575,34 @@ class DabPumpsApiWrap(AsyncDabPumps):
         # Call details
         self._diag_api_details[context] = detail
 
-        # Api data
-        self._diag_api_data = self._diag_api_data | data
+        # We ignore the contents of 'data', already have access to it as derived class
+        pass
 
 
     async def async_get_diagnostics(self) -> dict[str, Any]:
 
-        data = self._diag_api_data | {
-            "install_map": self.install_map,
-            "device_map": self.device_map,
-            "config_map": self.config_map,
-            "status_static_map": self._status_static_map,
-            "status_actual_map": self._status_actual_map,
-            "string_map": self.string_map,
-        }
-
-        retries_total = sum(self._diag_retries.values()) or 1
-        retries_counter = dict(sorted(self._diag_retries.items()))
-        retries_percent = { key: round(100.0 * n / retries_total, 2) for key,n in retries_counter.items() }
-
-        durations_total = sum(self._diag_durations.values()) or 1
-        durations_counter = dict(sorted(self._diag_durations.items()))
-        durations_percent = { key: round(100.0 * n / durations_total, 2) for key, n in durations_counter.items() }
-
-        fetch_total = sum(self._diag_fetch.values()) or 1
-        fetch_counter = dict(sorted(self._diag_fetch.items()))
-        fetch_percent = { key: round(100.0 * n / fetch_total, 2) for key, n in fetch_counter.items() }
-        
-        calls_total = sum([ n for key, n in self._diag_api_counters.items() ]) or 1
-        calls_counter = { key: n for key, n in self._diag_api_counters.items() }
-        calls_percent = { key: round(100.0 * n / calls_total, 2) for key, n in self._diag_api_counters.items() }
-
         return {
-            "data": data,
+            "data": {
+                "login_info": self.login_info,
+                "access_token_info": self._access_token_info,
+                "refresh_token_info": self._refresh_token_info,
+                "fetch_ts": self._fetch_ts,
+                "install_map": self.install_map,
+                "device_map": self.device_map,
+                "config_map": self.config_map,
+                "status_static_map": self._status_static_map,
+                "status_actual_map": self._status_actual_map,
+                "string_map": self.string_map,
+                "string_map_lang": self.string_map_lang,
+            },
             "cache": await self._cache.async_get_diagnostics(),
             "diagnostics": {
                 "ts": utcnow(),
-                "retries": {
-                    "counter": retries_counter,
-                    "percent": retries_percent,
-                },
-                "durations": {
-                    "counter": durations_counter,
-                    "percent": durations_percent,
-                },
-                "fetch": {
-                    "counter": fetch_counter,
-                    "percent": fetch_percent,
-                },
-                "calls": {
-                  "counter": calls_counter,
-                    "percent": calls_percent,
-                },
+                "retries": { key: n for key, n in sorted(self._diag_retries.items()) },
+                "durations": { f"{key} s": n for key, n in sorted(self._diag_durations.items()) },
+                "fetch": { key: n for key, n in sorted(self._diag_fetch.items()) },
+                "calls": { key: n for key, n in self._diag_api_counters.items() },
             },
-            "fetch_ts": self._fetch_ts,
             "history": self._diag_api_history,
             "details": self._diag_api_details,
         }
