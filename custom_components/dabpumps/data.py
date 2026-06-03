@@ -63,7 +63,14 @@ PARAM_INFOS = [
     PI(grp="System Management",    key="PumpDisable",                     vis=True,  mod=True,  cat="conf", cls="meas"),
     PI(grp="System Management",    key="",                                vis=True,  mod=True,  cat="diag", cls="meas"),
 
+    PI(grp="Configuration",        key="Ext signal type",                 vis=True,  mod=False, cat="diag", cls="meas"),
+    PI(grp="Configuration",        key="Twin type",                       vis=True,  mod=False, cat="diag", cls="meas"),
+    PI(grp="Configuration",        key="Identify",                        vis=True,  mod=True,  cat="diag", cls="meas"),
+    PI(grp="Configuration",        key="",                                vis=True,  mod=True,  cat="conf", cls="meas"),
+
     PI(grp="Advanced",             key="UpdateSystem",                    vis=False),
+    PI(grp="Advanced",             key="LegionellaSupported",             vis=False),
+    PI(grp="Advanced",             key="EnableLegionella",                vis=False),
     PI(grp="Advanced",             key="",                                vis=True,  mod=True,  cat="diag", cls="meas"),
 
     # Groups that are normally visible but presented as readonly (with exceptions for specific keys)
@@ -81,6 +88,7 @@ PARAM_INFOS = [
     PI(grp="Status",               key="LastErrorTimePowerOn",            vis=True,  mod=False, cat="diag", cls="meas"),
     PI(grp="Status",               key="ucVersion",                       vis=True,  mod=False, cat="diag", cls="meas"),
     PI(grp="Status",               key="Image",                           vis=True,  mod=False, cat="diag", cls="meas"),
+    PI(grp="Status",               key="SampleRate",                      vis=True,  mod=False, cat="diag", cls="meas"),
 
     PI(grp="Status",               key="Actual_Period_Flow_Counter",      vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="Actual_Period_Flow_Counter_Gall", vis=True,  mod=False, cat="sens", cls="total_inc"),
@@ -99,6 +107,8 @@ PARAM_INFOS = [
     PI(grp="Status",               key="UpTime",                          vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="WlanRx",                          vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="WlanTx",                          vis=True,  mod=False, cat="sens", cls="total_inc"),
+    PI(grp="Status",               key="Eth Rx",                          vis=True,  mod=False, cat="sens", cls="total_inc"),
+    PI(grp="Status",               key="Eth Tx",                          vis=True,  mod=False, cat="sens", cls="total_inc"),
     PI(grp="Status",               key="Last_Period_Flow_Counter",        vis=True,  mod=False, cat="sens", cls="none"),
     PI(grp="Status",               key="Last_Period_Flow_Counter_Gall",   vis=True,  mod=False, cat="sens", cls="none"),
     PI(grp="Status",               key="Last_Period_Energy_Counter",      vis=True,  mod=False, cat="sens", cls="none"),
@@ -113,6 +123,9 @@ PARAM_INFOS = [
     PI(grp="Firmware Updates",     key="ForceDownload",                   vis=False),
     PI(grp="Firmware Updates",     key="",                                vis=True,  mod=False, cat="diag", cls="meas"),
 
+    PI(grp="Update",               key="UpdateSystem",                    vis=False),
+    PI(grp="Update",               key="",                                vis=True,  mod=False, cat="diag", cls="meas"),
+
     PI(grp="Technical Assistance", key="PW_ModifyPassword",               vis=False),
     PI(grp="Technical Assistance", key="",                                vis=True,  mod=False, cat="diag", cls="meas"),
 
@@ -122,10 +135,13 @@ PARAM_INFOS = [
     PI(grp="Debug",                key="",                                vis=False),   
 
     PI(grp="Errors",               key="LatestError",                     vis=True,  mod=False, cat="diag", cls="meas"),
+    PI(grp="Errors",               key="Last Error",                      vis=True,  mod=False, cat="diag", cls="meas"),
     PI(grp="Errors",               key="RF_EraseHistoricalFault",         vis=True,  mod=True,  cat="diag", cls="meas"),
     PI(grp="Errors",               key="",                                vis=False),
 
+    PI(grp="Setup Assistant",      key="",                                vis=False),
     PI(grp="ModbusDevice",         key="",                                vis=False),
+    PI(grp="ModbusSlave",          key="",                                vis=False),
 
     # All other groups not yet known will be made visible
     PI(grp="",                     key="",                                vis=True,  mod=False, cat="sens", cls="meas"),
@@ -156,16 +172,20 @@ class UI:
 UNIT_INFOS = [
     UI(dp_unit='°C',        ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='Ã‚Â°C',     ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
+    UI(dp_unit='\u00b0C',   ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='°F',        ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='Ã‚Â°F',     ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
+    UI(dp_unit='\u00b0F',   ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='bar',       ha_unit=UnitOfPressure.BAR,                      icon='mdi:water-pump',     num_cls=NumberDeviceClass.PRESSURE,         sen_cls=SensorDeviceClass.PRESSURE),
     UI(dp_unit='psi',       ha_unit=UnitOfPressure.PSI,                      icon='mdi:water-pump',     num_cls=NumberDeviceClass.PRESSURE,         sen_cls=SensorDeviceClass.PRESSURE),
     UI(dp_unit='mc',        ha_unit=UnitOfVolume.CUBIC_METERS,               icon='mdi:water',          num_cls=NumberDeviceClass.WATER,            sen_cls=SensorDeviceClass.WATER),
     UI(dp_unit='l',         ha_unit=UnitOfVolume.LITERS,                     icon='mdi:water',          num_cls=NumberDeviceClass.WATER,            sen_cls=SensorDeviceClass.WATER),
     UI(dp_unit='gall',      ha_unit=UnitOfVolume.GALLONS,                    icon='mdi:water',          num_cls=NumberDeviceClass.WATER,            sen_cls=SensorDeviceClass.WATER),
     UI(dp_unit='l/min',     ha_unit=UnitOfVolumeFlowRate.LITERS_PER_MINUTE,  icon='mdi:hydro-power',    num_cls=NumberDeviceClass.VOLUME_FLOW_RATE, sen_cls=SensorDeviceClass.VOLUME_FLOW_RATE),
+    UI(dp_unit='m\u00b3/h', ha_unit=UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR,icon='mdi:hydro-power',  num_cls=NumberDeviceClass.VOLUME_FLOW_RATE, sen_cls=SensorDeviceClass.VOLUME_FLOW_RATE),
     UI(dp_unit='gall/min',  ha_unit=UnitOfVolumeFlowRate.GALLONS_PER_MINUTE, icon='mdi:hydro-power',    num_cls=NumberDeviceClass.VOLUME_FLOW_RATE, sen_cls=SensorDeviceClass.VOLUME_FLOW_RATE),
     UI(dp_unit='gpm',       ha_unit=UnitOfVolumeFlowRate.GALLONS_PER_MINUTE, icon='mdi:hydro-power',    num_cls=NumberDeviceClass.VOLUME_FLOW_RATE, sen_cls=SensorDeviceClass.VOLUME_FLOW_RATE),
+    UI(dp_unit='m',         ha_unit=UnitOfLength.METERS,                     icon='mdi:waves-arrow-up', num_cls=NumberDeviceClass.DISTANCE,         sen_cls=SensorDeviceClass.DISTANCE),
     UI(dp_unit='cm',        ha_unit=UnitOfLength.CENTIMETERS,                icon='mdi:waves-arrow-up', num_cls=NumberDeviceClass.DISTANCE,         sen_cls=SensorDeviceClass.DISTANCE),
     UI(dp_unit='inch',      ha_unit=UnitOfLength.INCHES,                     icon='mdi:waves-arrow-up', num_cls=NumberDeviceClass.DISTANCE,         sen_cls=SensorDeviceClass.DISTANCE),
     UI(dp_unit='ms',        ha_unit=UnitOfTime.MILLISECONDS,                 icon=None,                 num_cls=NumberDeviceClass.DURATION,         sen_cls=SensorDeviceClass.DURATION),
@@ -181,12 +201,14 @@ UNIT_INFOS = [
     UI(dp_unit='%',         ha_unit=PERCENTAGE,                              icon='mdi:percent',        num_cls=NumberDeviceClass.POWER_FACTOR,     sen_cls=SensorDeviceClass.POWER_FACTOR),
     UI(dp_unit='V',         ha_unit=UnitOfElectricPotential.VOLT,            icon='mdi:lightning-bolt', num_cls=NumberDeviceClass.VOLTAGE,          sen_cls=SensorDeviceClass.VOLTAGE),
     UI(dp_unit='A',         ha_unit=UnitOfElectricCurrent.AMPERE,            icon='mdi:lightning-bolt', num_cls=NumberDeviceClass.CURRENT,          sen_cls=SensorDeviceClass.CURRENT),
+    UI(dp_unit='mA',        ha_unit=UnitOfElectricCurrent.MILLIAMPERE,       icon='mdi:lightning-bolt', num_cls=NumberDeviceClass.CURRENT,          sen_cls=SensorDeviceClass.CURRENT),
     UI(dp_unit='W',         ha_unit=UnitOfPower.WATT,                        icon='mdi:power-plug',     num_cls=NumberDeviceClass.POWER,            sen_cls=SensorDeviceClass.POWER),
     UI(dp_unit='kW',        ha_unit=UnitOfPower.KILO_WATT,                   icon='mdi:power-plug',     num_cls=NumberDeviceClass.POWER,            sen_cls=SensorDeviceClass.POWER),
     UI(dp_unit='Wh',        ha_unit=UnitOfEnergy.WATT_HOUR,                  icon='mdi:lightning',      num_cls=NumberDeviceClass.ENERGY,           sen_cls=SensorDeviceClass.ENERGY),
     UI(dp_unit='kWh',       ha_unit=UnitOfEnergy.KILO_WATT_HOUR,             icon='mdi:lightning',      num_cls=NumberDeviceClass.ENERGY,           sen_cls=SensorDeviceClass.ENERGY),
     UI(dp_unit='Address',   ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit='SW. Vers.', ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
+    UI(dp_unit='T',         ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit='',          ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit=None,        ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
 ]
