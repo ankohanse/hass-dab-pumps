@@ -10,8 +10,11 @@
 [Home Assistant](https://home-assistant.io/) custom component for retrieving sensor information from DAB Pumps devices.
 This component connect to the remote DAB Pumps servers and automatically determines which installations and devices are available there.
 
-The custom component was tested with a ESybox 1.5kw combined with a DConnect Box 2. 
-It has also been reported to function correctly for ESybox Mini and ESybox Diver.
+The custom component should be able to handle any DAB Pumps device that is supported through the H2D, DabLive or DConnect apps. Specifically it has been in reported to function correctly with:
+- EsyBox combined with a DConnect Box 2
+- EsyBox Mini
+- EsyBox Diver
+- EvoPlus Small combined with a DConnect Box
 
 
 # Prerequisites
@@ -19,9 +22,9 @@ This integration depends on the backend servers for the DAB Pumps H2D app, DAB L
 
 - For most pumps:
 
-  All DAB's new network-capable pumps will progressively be connected with H2D. At the moment, H2D is supported by Esybox Mini3, Esybox Max, NGPanel, NGDrive and the new EsyBox.
+  All DAB's new network-capable pumps will progressively be connected with H2D. At the moment, H2D is supported by EsyBox Mini3, EsyBox Max, NGPanel, NGDrive and the new EsyBox.
 
-  Newer pump devices will have integrated connectivity (Esybox MAX and Esybox Mini), while older pumps might require a DConnect Box/Box2 device (Esybox and Esybox Diver).
+  Newer pump devices will have integrated connectivity (EsyBox MAX and EsyBox Mini), while older pumps might require a DConnect Box/Box2 device (ESyBox and ESyBox Diver).
 
   Using free functionalilty you will be able to check the system's basic parameters via the H2D app and this Home Assistant integration. To allow to edit settings via the H2D app and this integration you will need a Dab Pumps subscription to premium H2D. Follow the steps under [H2D](#h2d)
 
@@ -29,7 +32,7 @@ This integration depends on the backend servers for the DAB Pumps H2D app, DAB L
 
   The older Dab Live and DConnect apps are being replaced by H2D, but are still available.
 
-  Esybox Mini3 pumps are supported on the DAB Live app with a free DAB Live account, or on the DConnect App with a paid account. Follow the steps under either [DAB Live](#dab-live) or [DConnect](#dconnect).
+  EsyBox Mini3 pumps are supported on the DAB Live app with a free DAB Live account, or on the DConnect App with a paid account. Follow the steps under either [DAB Live](#dab-live) or [DConnect](#dconnect).
 
   To see whether your pump device is supported via DConnect, browse to [internetofpumps.com](https://internetofpumps.com/), select 'Professional Users' and scroll down to the operation diagram. A free trial period is available, after that there is a yearly subscription to DAB Pumps DConnect (US$ 20 in 2024). Follow the steps under [DConnect](#dconnect).
 
@@ -177,12 +180,10 @@ For additional suggestions and tips&trick, see the [wiki](https://github.com/ank
 # Credits
 
 Special thanks to the following people for their testing and feedback on the first versions of this custom integration:
-- [Djavdeteg](https://github.com/Djavdeteg) on ESybox Mini 3
-- [Coldness00](https://github.com/Coldness00) on ESybox Mini 3
-- [benjaminmurray](https://github.com/benjaminmurray) on ESybox Mini 3
-- [nicopret1](https://github.com/nicopret1) on ESybox Mini 3
-- [hannovdm](https://github.com/hannovdm) on ESybox V2
-- [Bascht74](https://github.com/Bascht74) on ESybox Diver (with fluid add-on)
+- [Djavdeteg](https://github.com/Djavdeteg), [Coldness00](https://github.com/Coldness00), [Benjamin Murray](https://github.com/benjaminmurray), [Nico Pretorius](https://github.com/nicopret1) on EsyBox Mini 3
+- [Hanno van der Maas](https://github.com/hannovdm) on EsyBox V2
+- [Bascht74](https://github.com/Bascht74) on EsyBox Diver (with fluid add-on)
+- [Bart Hartgring](https://github.com/Blutterbunged) on EvoPlus Small (with DConnect Box)
 - [Deshan Pillay](https://github.com/Desh86) on the DAB Live connectivity
 
 And for the translations:
