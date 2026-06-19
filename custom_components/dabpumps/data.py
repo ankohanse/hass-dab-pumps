@@ -8,6 +8,7 @@ import logging
 
 from dataclasses import asdict, dataclass
 from enum import StrEnum
+from fnmatch import fnmatch
 
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
@@ -170,11 +171,9 @@ class UI:
     sen_cls: SensorDeviceClass  # DeviceClass for sensor entities
 
 UNIT_INFOS = [
-    UI(dp_unit='°C',        ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
-    UI(dp_unit='Ã‚Â°C',     ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
+    UI(dp_unit='*°C',       ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='\u00b0C',   ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
-    UI(dp_unit='°F',        ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
-    UI(dp_unit='Ã‚Â°F',     ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
+    UI(dp_unit='*°F',       ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='\u00b0F',   ha_unit=UnitOfTemperature.FAHRENHEIT,            icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
     UI(dp_unit='bar',       ha_unit=UnitOfPressure.BAR,                      icon='mdi:water-pump',     num_cls=NumberDeviceClass.PRESSURE,         sen_cls=SensorDeviceClass.PRESSURE),
     UI(dp_unit='psi',       ha_unit=UnitOfPressure.PSI,                      icon='mdi:water-pump',     num_cls=NumberDeviceClass.PRESSURE,         sen_cls=SensorDeviceClass.PRESSURE),
@@ -210,7 +209,6 @@ UNIT_INFOS = [
     UI(dp_unit='SW. Vers.', ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit='T',         ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit='',          ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
-    UI(dp_unit=None,        ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
 ]
             
 
@@ -223,4 +221,6 @@ class UnitInfo(UI):
     def find_by_dabpumps_unit(unit: str) -> 'UnitInfo':
 
         # Loop over list to find the first match
-        return next( (UnitInfo(ui) for ui in UNIT_INFOS if ui.dp_unit in [unit,None]), None )
+        # Note we use a wildcard match because sometimes weird extra characters are defined in
+        # front of temperature units (°C and °F)
+        return next( (UnitInfo(ui) for ui in UNIT_INFOS if fnmatch(unit or '', ui.dp_unit)), None )
