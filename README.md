@@ -14,6 +14,7 @@ The custom component should be able to handle any DAB Pumps device that is suppo
 - EsyBox combined with a DConnect Box 2
 - EsyBox Mini
 - EsyBox Diver
+- Esybox Pop
 - EvoPlus Small combined with a DConnect Box
 
 

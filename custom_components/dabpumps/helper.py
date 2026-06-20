@@ -133,7 +133,10 @@ class DabPumpsEntityHelper:
                     return Platform.TIME
                 else:
                     return Platform.NUMBER
-        
+
+            elif params.type == 'settings':
+                if params.key in ['HolidayModeLocalTimeStart', 'HolidayModeLocalTimeEnd']:
+                    return Platform.DATETIME
         
         # Could it be a sensor or binary sensor entity? 
         # Needs to have all of:

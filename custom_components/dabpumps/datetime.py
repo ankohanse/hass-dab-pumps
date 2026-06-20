@@ -1,16 +1,18 @@
 import logging
 
-from homeassistant.components.time import TimeEntity
-from homeassistant.components.time import ENTITY_ID_FORMAT
+from homeassistant.components.datetime import DateTimeEntity
+from homeassistant.components.datetime import ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
-from datetime import time
-from datetime import timedelta
+from datetime import datetime, timedelta
+from datetime import timezone
 
 from pydabpumps import (
     DabPumpsDevice,
@@ -33,7 +35,6 @@ from .helper import (
     DabPumpsEntityHelper,
 )
 
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -41,10 +42,11 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, asyn
     """
     Setting up the adding and updating of number entities
     """
-    await DabPumpsEntityHelper(hass, config_entry).async_setup_entry(Platform.TIME, DabPumpsTime, async_add_entities)
+    await DabPumpsEntityHelper(hass, config_entry).async_setup_entry(Platform.DATETIME, DabPumpsDateTime, async_add_entities)
 
 
-class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
+
+class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
     """
     Representation of a DAB Pumps Time Entity.
     
@@ -53,35 +55,22 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
     """
     
     def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
-        """ 
-        Initialize the sensor. 
-        """
-
+        """ Initialize the sensor. """
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, status_key, device, params)
         
         # Sanity check
-        if params.type != DabPumpsParamType.MEASURE:
-            _LOGGER.error(f"Unexpected parameter type ({params.type}) for a time entity")
+        if params.type != DabPumpsParamType.SETTINGS:
+            _LOGGER.error(f"Unexpected parameter type ({params.type}) for a datetime entity")
 
-        # The unique identifiers for this sensor within Home Assistant
+        # The unique identifier for this sensor within Home Assistant
         self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
         
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
-        # Prepare attributes
-        attr_min = int(self._params.min) if self._params.min is not None else None
-        attr_max = int(self._params.max) if self._params.max is not None else None
-        attr_step = self.get_number_step()
-        
         # update creation-time only attributes
         self._attr_device_class = None
         self._attr_entity_category = self.get_entity_category()
-        if attr_min:
-            self._attr_native_min_value = attr_min
-        if attr_max:
-            self._attr_native_max_value = attr_max
-        self._attr_native_step = attr_step
 
         # Create all value related attributes
         self._update_attributes(status, force=True)
@@ -89,10 +78,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
     
     @callback
     def _handle_coordinator_update(self) -> None:
-        """
-        Handle updated data from the coordinator.
-        """
-
+        """Handle updated data from the coordinator."""
         # find the correct status corresponding to this entity
         (_, _, status_map) = self._coordinator.data
         
@@ -112,15 +98,11 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         
         # Is the status expired?
         if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
-            # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (23:59).
-            # TimeEntity expects time object and can only be between 00:00 and 23:59
-            # We sneakily replace value 1440 (24:00) into 23:59
-            if int(status.value) >= 86340:
-                attr_val = time(23, 59)
+            # DAB Pumps value is an Iso string in local time
+            if status.value is not None:
+                attr_val = datetime.fromisoformat(status.value).astimezone()
             else:
-                hour = int(status.value // 3600)
-                minute = int( (status.value % 3600) // 60)
-                attr_val = time(hour, minute)
+                attr_val = None
         else:
             attr_val = None
 
@@ -136,14 +118,13 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
             changed = True
         
         return changed
-    
 
-    async def async_set_value(self, value: time) -> None:
+
+    async def async_set_value(self, value: datetime) -> None:
         """Change the date/time"""
         
-        # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (23:59).
-        # TimeEntity expects time object and can only be between 00:00 and 23:59
-        entity_value = value.hour * 3600 + value.minute * 60
+        # DAB Pumps value is an Iso string in local time
+        entity_value = value.astimezone().replace(tzinfo=None).isoformat()
         trace_value = value
 
         _LOGGER.info(f"Set {self.entity_id} to {trace_value} ({entity_value})")
@@ -152,3 +133,5 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         if status is not None:
             self._update_attributes(status, force=True)
             self.async_write_ha_state()
+
+
