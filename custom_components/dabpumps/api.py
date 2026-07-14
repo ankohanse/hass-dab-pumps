@@ -15,7 +15,9 @@ from pydabpumps import (
     AsyncDabPumps,
     DabPumpsInstall,
     DabPumpsDevice,
-    DabPumpsConfig,
+    DabPumpsDeviceConfig,
+    DabPumpsDeviceState,
+    DabPumpsParams,
     DabPumpsStatus,
     DabPumpsUserRole,
     DabPumpsHistoryItem,
@@ -114,9 +116,8 @@ class DabPumpsFetchMethod(Enum):
 class DabPumpsFetchOrder():
     """Fetch orders"""
 
-    # On config, we try to fetch new data from web (slower)
-    # No retries; if all login methods fail, we want to know immediately
-    CONFIG: Final = ( DabPumpsFetchMethod.WEB, )   # Deliberate trailing comma to force create a tuple
+    # On config, we try to fetch new data from web (slower and with two retries)
+    CONFIG: Final = ( DabPumpsFetchMethod.WEB, DabPumpsFetchMethod.WEB, DabPumpsFetchMethod.WEB, )
 
     # On first fetch, we try to fetch old data from cache (faster) and 
     # fallback to fetch new data from web (slower and with two retries)
@@ -188,7 +189,9 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
                         # Logout so we really force a subsequent login and not use an old token
-                        await super().logout()
+                        if retry == 0:
+                            await super().logout()
+
                         await super().login()
                         
                         # Fetch the list of installations
@@ -206,8 +209,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 # Already logged at debug level in pydabpumps
                 if not ex_first:
                     ex_first = ex
-
-                await super().logout()
             
         # Keep track of how many retries were needed and duration
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
@@ -487,13 +488,13 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
         install_dict = { k:asdict(v) for k,v in self.install_map.items() }
         device_dict = { k:asdict(v) for k,v in self.device_map.items() if v.serial in install_serials }
-        config_dict = { k:asdict(v) for k,v in self.config_map.items() if v.id in install_configs }
-        status_dict = { k:asdict(v) for k,v in self.status_map.items() if v.serial in install_serials }
+        device_config_dict = { k:asdict(v) for k,v in self.device_config_map.items() if v.id in install_configs }
+        device_state_dict = { k:asdict(v) for k,v in self.device_state_map.items() if k in install_serials }
         
         self._cache.set(f"install_map {self._username}", install_dict )
         self._cache.set(f"device_map {install_id}", device_dict )
-        self._cache.set(f"config_map {install_id}", config_dict )
-        self._cache.set(f"status_map {install_id}", status_dict )
+        self._cache.set(f"device_config_map {install_id}", device_config_dict )
+        self._cache.set(f"device_state_map {install_id}", device_state_dict )
 
         # Note that async_write will reduce the number of writes if needed.
         await self._cache.async_write(force)
@@ -510,26 +511,16 @@ class DabPumpsApiWrap(AsyncDabPumps):
         # Get all mappings, these will be returned as pure dicts and need to be converted into the proper dataclasses
         install_dict = self._cache.get(f"install_map {self._username}", {})
         device_dict = self._cache.get(f"device_map {install_id}", {})
-        config_dict = self._cache.get(f"config_map {install_id}", {})
-        status_dict = self._cache.get(f"status_map {install_id}", {})
+        device_config_dict = self._cache.get(f"device_config_map {install_id}", {})
+        device_state_dict = self._cache.get(f"device_state_map {install_id}", {})
 
-        if not install_dict or not device_dict or not config_dict or not status_dict:
+        if not install_dict or not device_dict or not device_config_dict or not device_state_dict:
             raise Exception(f"Not all data found in {self._cache.key}")
         
         self._install_map.update( { k:DabPumpsInstall(**v) for k,v in install_dict.items() } )
         self._device_map.update( { k:DabPumpsDevice(**v) for k,v in device_dict.items() } )
-        self._config_map.update( { k:DabPumpsConfig(**v) for k,v in config_dict.items() } )
-        self._status_actual_map.update( { k:DabPumpsStatus(**v) for k,v in status_dict.items() } )
-
-        # Api versions before v1.5.0 would encode CUSTOMER and CUSTOMER_FREE both as C instead of C and c.
-        # We known we either only have CUSTOMER (C) or both CUSTOMER and CUSTOMER_FREE (CC but should have been Cc). But never just CUSTOMER_FREE.
-        # Similar for INSTALLER and INSTALLER_FREE (both I instead of I and i).
-        for config in self._config_map.values():
-            for param in config.meta_params.values():
-                if param.view.count('C') > 1: param.view = param.view.replace('C', 'c', 1)
-                if param.view.count('I') > 1: param.view = param.view.replace('I', 'i', 1)
-                if param.change.count('C') > 1: param.change = param.change.replace('C', 'c', 1)
-                if param.change.count('I') > 1: param.change = param.change.replace('I', 'i', 1)
+        self._device_config_map.update( { k:DabPumpsDeviceConfig(**v) for k,v in device_config_dict.items() } )
+        self._device_state_map.update( { k:DabPumpsDeviceState(**v) for k,v in device_state_dict.items() } )
 
 
     def _update_statistics(self, retries: int|None = None, duration: timedelta|None = None, fetch: DabPumpsFetchMethod|None = None):
@@ -589,9 +580,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 "fetch_ts": self._fetch_ts,
                 "install_map": self.install_map,
                 "device_map": self.device_map,
-                "config_map": self.config_map,
-                "status_static_map": self._status_static_map,
-                "status_actual_map": self._status_actual_map,
+                "device_config_map": self.device_config_map,
+                "device_state_map": self._device_state_map,
                 "string_map": self.string_map,
                 "string_map_lang": self.string_map_lang,
             },

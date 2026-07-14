@@ -10,7 +10,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from pydabpumps import (
     DabPumpsDevice,
@@ -52,7 +52,7 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -65,7 +65,7 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a number entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + status_key
         
         # Reduce tracing during startup. Can enable for specific development debugging
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
@@ -93,7 +93,7 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         self._attr_native_step = attr_step
 
         # Create all value related attributes
-        self._update_attributes(status, force=True)
+        self._update_attributes(status, status_ts, force=True)
     
     
     @callback
@@ -103,30 +103,32 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         """
 
         # find the correct status corresponding to this entity
-        (_, _, status_map) = self._coordinator.data
+        (_, _, device_state_map) = self._coordinator.data
         
-        status = status_map.get(self._status_key) if status_map is not None else None
-        if status is None:
-            return
+        state = device_state_map.get(self._device.serial) if device_state_map is not None else None
+        if state is None:
+            return 
+        
+        status = state.status.get(self._status_key)
+        status_ts = state.status_ts
 
         # Update any attributes
-        if self._update_attributes(status):
+        if self._update_attributes(status, status_ts):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
-        
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
             attr_val = status.value
         else:
             attr_val = None
         
         # update value if it has changed
-        changed = super()._update_attributes(status, force)
+        changed = super()._update_attributes(status, status_ts, force)
 
         if force or self._attr_native_value != attr_val:
 
@@ -145,5 +147,5 @@ class DabPumpsNumber(CoordinatorEntity, NumberEntity, DabPumpsEntity):
         
         status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, value=value)
         if status is not None:
-            self._update_attributes(status, force=True)
+            self._update_attributes(status, utcnow(), force=True)
             self.async_write_ha_state()

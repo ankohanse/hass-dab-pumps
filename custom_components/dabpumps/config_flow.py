@@ -37,8 +37,6 @@ from .const import (
     DEFAULT_LANGUAGE,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
-    CONF_POLLING_INTERVAL,
-    MSG_POLLING_INTERVAL,
     MSG_LANGUAGE,
     LANGUAGE_MAP,
     LANGUAGE_AUTO,
@@ -276,7 +274,6 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_INSTALL_NAME: self._install_name,
             },
             options = {
-                CONF_POLLING_INTERVAL: DEFAULT_POLLING_INTERVAL,
                 CONF_LANGUAGE: DEFAULT_LANGUAGE,
             }
         )
@@ -323,7 +320,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             _LOGGER.debug(f"Options flow handle user input")
             self._errors = {}
 
-            self._polling_interval = user_input[MSG_POLLING_INTERVAL]
             self._language_name = user_input.get(MSG_LANGUAGE, None)
             self._language_code = next( (code for code,name in self._language_map.items() if name == self._language_name), None)
 
@@ -334,7 +330,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     options = {
-                        CONF_POLLING_INTERVAL: self._polling_interval,
                         CONF_LANGUAGE: self._language_code,
                     } 
                 )
@@ -343,7 +338,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             _LOGGER.error(f"Error: {self._errors}")
         
         else:
-            self._polling_interval = self.config_entry.options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)
             self._language_code = self.config_entry.options.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
             self._language_name = next( (name for code,name in self._language_map.items() if code == self._language_code), LANGUAGE_MAP[DEFAULT_LANGUAGE])
 
@@ -353,8 +347,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
-                vol.Required(MSG_POLLING_INTERVAL, default=self._polling_interval): 
-                    vol.All(vol.Coerce(int), vol.Range(min=5)),
                 vol.Required(MSG_LANGUAGE, default=self._language_name): selector({
                    "select": {
                       "options": [ name for name in self._language_map.values() ]

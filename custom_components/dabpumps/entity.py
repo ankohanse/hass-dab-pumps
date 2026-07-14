@@ -74,17 +74,17 @@ class DabPumpsEntity(RestoreEntity):
         self._coordinator = coordinator
         self._device = device
         self._params = params
-        self._param_info = ParamInfo.find(params.group, params.key)
+        self._param_info = ParamInfo.find(params.group, status_key)
         self._unit_info = UnitInfo.find_by_dabpumps_unit(params.unit)
 
         # The unique identifiers for this sensor within Home Assistant
         self._status_key = status_key      # Key for lookup of status in the API
-        self._attr_object_id = self._coordinator.create_id(device.serial, params.key) # Device.serial + params.key
-        self._attr_unique_id = self._coordinator.create_id(device.name, params.key)   # Device.name + params.key
+        self._attr_object_id = self._coordinator.create_id(device.serial, status_key) # Device.serial + status_key
+        self._attr_unique_id = self._coordinator.create_id(device.name, status_key)   # Device.name + status_key
         
         self._attr_has_entity_name = True
         self._attr_name = params.name
-        self._name = params.key
+        self._name = status_key
 
         self._attr_device_info = DeviceInfo(
             identifiers = {(DOMAIN, coordinator.create_id(self._device.serial))},
@@ -141,23 +141,21 @@ class DabPumpsEntity(RestoreEntity):
             dict_extra = last_extra.as_dict()
 
             status = DabPumpsStatus(
-                serial = self._device.serial,
-                key = self._params.key,
-                name = self.name,
                 code = dict_extra.get(ATTR_STORED_CODE),
                 value = dict_extra.get(ATTR_STORED_VALUE),
-                unit = self._params.unit,
-                status_ts = dict_extra.get(ATTR_STORED_TS),
-                update_ts = None,
             )
+            status_ts = dict_extra.get(ATTR_STORED_TS)
+
+            if status_ts and isinstance(status_ts, str):
+                status_ts = datetime.fromisoformat(status_ts)
 
             # Reduce tracing during startup. Can enable for specific development debugging
             #_LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code}) with ts: {status.status_ts}")
         
-            self._update_attributes(status, force=True)
+            self._update_attributes(status, status_ts, force=True)
     
 
-    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force:bool=False) -> bool:
         """
         Process any changes in value
         
@@ -165,10 +163,10 @@ class DabPumpsEntity(RestoreEntity):
         """
         changed = False
 
-        if self._status_code != status.code or self._status_value != status.value or self._status_ts != status.status_ts:
+        if self._status_code != status.code or self._status_value != status.value or self._status_ts != status_ts:
             self._status_code = status.code
             self._status_value = status.value
-            self._status_ts = status.status_ts
+            self._status_ts = status_ts
             changed = True
 
         return changed

@@ -6,9 +6,9 @@
   "dependencies": [],
   "documentation": "https://github.com/ankohanse/hass-dab-pumps",
   "integration_type": "hub",
-  "iot_class": "cloud_polling",
+  "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/ankohanse/hass-dab-pumps/issues",
   "loggers": ["custom_components.dabpumps"],
-  "requirements": ["pydabpumps==1.5.7"],
-  "version": "2026.07.1"
+  "requirements": ["pydabpumps==2.0.0"],
+  "version": "2026.09.1"
 }

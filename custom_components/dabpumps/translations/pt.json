@@ -35,7 +35,6 @@
             "init": {
                 "title":"Opções Gerais",
                 "data": {
-                    "polling_interval": "Intervalo de pesquisa para atualizar sensores (segundos)",
                     "language": "Idioma"
                 }
             }

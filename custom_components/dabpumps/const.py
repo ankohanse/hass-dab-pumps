@@ -31,15 +31,13 @@ COORDINATOR = "Coordinator"
 
 DEFAULT_USERNAME = ""
 DEFAULT_PASSWORD = ""
-DEFAULT_POLLING_INTERVAL = 20
+DEFAULT_POLLING_INTERVAL = 60
 DEFAULT_LANGUAGE = "auto"
 
 CONF_INSTALL_ID = "install_id"
 CONF_INSTALL_NAME = "install_name"
 CONF_OPTIONS = "options"
-CONF_POLLING_INTERVAL = "polling_interval"
 
-MSG_POLLING_INTERVAL = 'polling_interval'
 MSG_LANGUAGE = 'language'
 
 STORE_KEY_CACHE = "cache"

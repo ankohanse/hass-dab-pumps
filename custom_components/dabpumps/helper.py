@@ -9,6 +9,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 import homeassistant.helpers.entity_registry as entity_registry
 
+from pydabpumps import (
+    DabPumpsParams,
+    DabPumpsStatus,
+    DabPumpsStatusCode,
+)
 from .const import (
     PLATFORMS,
     BINARY_SENSOR_VALUES_ALL,
@@ -45,9 +50,9 @@ class DabPumpsEntityHelper:
         Setting up the adding and updating of sensor and binary_sensor entities
         """    
         # Get data from the coordinator
-        (device_map, config_map, status_map) = self._coordinator.data
+        (device_map, device_config_map, device_state_map) = self._coordinator.data
         
-        if not device_map or not config_map or not status_map:
+        if not device_map or not device_config_map or not device_state_map:
             # If data returns False or is empty, log an error and return
             _LOGGER.warning(f"Failed to fetch sensor data - authentication failed or no data.")
             return
@@ -58,36 +63,36 @@ class DabPumpsEntityHelper:
         entities = []
         valid_unique_ids: list[str] = []
 
-        for status_key, status in status_map.items():
-
-            # skip statuses that are not associated with a device in this installation
-            device = device_map.get(status.serial, None)
-            if not device or device.install_id != self._coordinator.install_id:
-                continue
-            
-            config = config_map.get(device.config_id, None)
-            if not config:
-                continue
-            
-            params = config.meta_params.get(status.key, None) if config.meta_params else None
-            if not params:
+        for device in device_map.values():
+            # skip devices that are in this installation
+            if device.install_id != self._coordinator.install_id:
                 continue
 
-            platform = self._get_entity_platform(params)
-            if platform != target_platform:
-                # This status will be handled via another platform or is completely suppressed
+            config = device_config_map.get(device.config_id)
+            state = device_state_map.get(device.serial)
+            if config is None or state is None:
                 continue
+
+            for key, params in config.meta_params.items():
+
+                status = state.status.get(key)
+                status_ts = state.status_ts
+
+                platform = self._get_entity_platform(key, params, status)
+                if platform != target_platform:
+                    # This status will be handled via another platform or is completely suppressed
+                    continue
                 
-            # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
-            entity = None                
-            try:
-                entity = target_class(self._coordinator, status_key, device, params, status)
-                entities.append(entity)
-                
-                valid_unique_ids.append(entity.unique_id)
+                # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
+                entity = None                
+                try:
+                    entity = target_class(self._coordinator, key, device, params, status, status_ts)
+                    entities.append(entity)
+                    
+                    valid_unique_ids.append(entity.unique_id)
 
-            except Exception as  ex:
-                _LOGGER.warning(f"Could not instantiate {platform} entity class for {status_key}. Details: {ex}")
+                except Exception as  ex:
+                    _LOGGER.warning(f"Could not instantiate {platform} entity class for {key}. Details: {ex}")
 
         # Remember valid unique_ids per platform so we can do an entity cleanup later
         self._coordinator.set_valid_unique_ids(target_platform, valid_unique_ids)
@@ -98,13 +103,13 @@ class DabPumpsEntityHelper:
             async_add_entities(entities)
 
         
-    def _get_entity_platform(self, params):
+    def _get_entity_platform(self, key: str, params: DabPumpsParams, status: DabPumpsStatus):
         """
         Determine what platform an entry should be added into
         """
         
         # Find the datapoint containing info about how to handle this param
-        info = ParamInfo.find(params.group, params.key)
+        info = ParamInfo.find(params.group, key)
 
         # Could it be a button/switch/select/number config or control entity? 
         # Needs to have all of:
@@ -112,18 +117,25 @@ class DabPumpsEntityHelper:
         # - change rights for the user role
         if info is not None and info.vis and info.mod and self._coordinator.user_role in params.change:
 
-            # Is it a a button/switch/select ?
+            # Is it a a button?
             if params.type == 'enum':
                 # With exactly 1 possible value that are of 'press' type it becomes a button
+                # These usually do not have a current status value, so don't check for it
                 if len(params.values or []) == 1:
                     if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
                         return Platform.BUTTON
 
+            # All options below must have an actual status value, otherwise we suppress it
+            if status is None or status.code in [DabPumpsStatusCode.HIDDEN]:
+                return None
+                
+            # Is it a a switch/select ?
+            if params.type == 'enum':
                 # With exactly 2 possible values that are of ON/OFF type it becomes a switch
                 if len(params.values or []) == 2:
-                    if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
+                   if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
                         return Platform.SWITCH
-                    
+
                 # With more values or not of ON/OFF type it becomes a Select
                 return Platform.SELECT
                 
@@ -135,16 +147,21 @@ class DabPumpsEntityHelper:
                     return Platform.NUMBER
 
             elif params.type == 'settings':
-                if params.key in ['HolidayModeLocalTimeStart', 'HolidayModeLocalTimeEnd']:
+                if key in ['HolidayModeLocalTimeStart', 'HolidayModeLocalTimeEnd']:
                     return Platform.DATETIME
+                
+            else:
+                # Fallthrough to sensor or binary sensor below
+                pass
         
         # Could it be a sensor or binary sensor entity? 
         # Needs to have all of:
         # - not fit or fall through the tests for a button/switch/select/number config or control entity
         # - allowed as visible entity in the Datapoints
+        # - have a status value that does not indicate it should be hidden
         # 
         # Note: no need to check view rights for the user role; if we get inside this function then we have a status value for the entity
-        if info is not None and info.vis:
+        if info is not None and info.vis and status is not None and status.code not in [DabPumpsStatusCode.HIDDEN]:
 
             if params.type == 'enum':
                 # Suppress buttons if we only have view rights

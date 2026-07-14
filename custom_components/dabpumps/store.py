@@ -1,4 +1,5 @@
 import asyncio
+from fnmatch import fnmatch
 import logging
 import os
 
@@ -116,6 +117,9 @@ class DabPumpsStore(Store[dict]):
                 # This migrate is only applicable for the 'cache' store
                 await self._async_migrate_cache_file()
 
+                # Remove any outdated keys if needed
+                await self._async_migrate_cache_keys()
+
         except Exception as ex:
             _LOGGER.warning(f"Exception while migrating persisted {self.key}: {ex}")
             self._store_data = {}
@@ -143,6 +147,33 @@ class DabPumpsStore(Store[dict]):
 
             except Exception as e:
                 _LOGGER.debug(f"Exception: {e}")
+
+
+    async def _async_migrate_cache_keys(self):
+        """
+        Remove legacy item_keys if needed
+        """
+        try:
+            # Remove any keys that are no longer in use
+            store_data = await super().async_load() or {}
+            
+            depricated_item_keys = ["config_map *", "status_map *"]
+            store_data_item_keys = list(store_data.keys())
+
+            for item_key in store_data_item_keys:
+                # Filter depricated item keys
+                for depricated_item_key in depricated_item_keys:
+                    if fnmatch(item_key, depricated_item_key):
+                        store_data.pop(item_key, None)
+                
+                # Filter depricated mixed case item keys
+                if any(char.isupper() for char in item_key):
+                    store_data.pop(item_key, None)
+
+            await super().async_save(store_data)
+
+        except Exception as ex:
+            _LOGGER.warning(f"Exception while migrating persisted {self.key}: {ex}")
 
 
     async def async_read(self):
@@ -202,6 +233,7 @@ class DabPumpsStore(Store[dict]):
         """
         Get an item from the store data
         """
+        item_key = item_key.lower()
         item_val = self._store_data.get(item_key)
         if item_val is not None:
             _LOGGER.debug(f"Fetched from {self.key}: '{item_key}'")
@@ -215,6 +247,8 @@ class DabPumpsStore(Store[dict]):
         """
         Set an item into the store data
         """
+        item_key = item_key.lower()
+        
         self._store_data[item_key] = item_val
         self._last_change = utcnow()
 

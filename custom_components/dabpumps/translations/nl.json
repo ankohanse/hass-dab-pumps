@@ -35,7 +35,6 @@
             "init": {
                 "title":"Algemene Opties",
                 "data": {
-                    "polling_interval": "Interval om sensoren te verversen (seconden)",
                     "language": "Taal"
                 }
             }

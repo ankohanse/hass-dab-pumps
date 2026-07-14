@@ -9,7 +9,7 @@ from homeassistant.core import callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import time
+from datetime import datetime, time
 from datetime import timedelta
 
 from pydabpumps import (
@@ -52,7 +52,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -65,7 +65,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a time entity")
 
         # The unique identifiers for this sensor within Home Assistant
-        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + status_key
         
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
@@ -84,7 +84,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         self._attr_native_step = attr_step
 
         # Create all value related attributes
-        self._update_attributes(status, force=True)
+        self._update_attributes(status, status_ts, force=True)
     
     
     @callback
@@ -94,24 +94,27 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         """
 
         # find the correct status corresponding to this entity
-        (_, _, status_map) = self._coordinator.data
+        (_, _, device_state_map) = self._coordinator.data
         
-        status = status_map.get(self._status_key) if status_map is not None else None
-        if status is None:
-            return
+        state = device_state_map.get(self._device.serial) if device_state_map is not None else None
+        if state is None:
+            return 
+        
+        status = state.status.get(self._status_key)
+        status_ts = state.status_ts
 
         # Update any attributes
-        if self._update_attributes(status):
+        if self._update_attributes(status, status_ts):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
         
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
             # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (23:59).
             # TimeEntity expects time object and can only be between 00:00 and 23:59
             # We sneakily replace value 1440 (24:00) into 23:59
@@ -125,7 +128,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
             attr_val = None
 
         # update value if it has changed
-        changed = super()._update_attributes(status, force)
+        changed = super()._update_attributes(status, status_ts, force)
 
         if force or self._attr_native_value != attr_val:
 
@@ -150,5 +153,5 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         
         status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, value=entity_value)
         if status is not None:
-            self._update_attributes(status, force=True)
+            self._update_attributes(status, utcnow(), force=True)
             self.async_write_ha_state()

@@ -21,6 +21,10 @@ from homeassistant.const import (
 )
 
 from pydabpumps import (
+    DabPumpsDevice,
+    DabPumpsDeviceConfig,
+    DabPumpsDeviceState,
+    DabPumpsParams,
     DabPumpsStatus,
     DabPumpsUserRole,
 ) 
@@ -36,7 +40,6 @@ from .const import (
     LANGUAGE_AUTO_FALLBACK,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
-    CONF_POLLING_INTERVAL,
     COORDINATOR_RELOAD_DELAY,
     COORDINATOR_RELOAD_DELAY_MAX,
     utcnow,
@@ -63,8 +66,8 @@ class DabPumpsCoordinatorFactory:
         configs = config_entry.data or {}
         options = config_entry.options or {}
 
-        username = configs.get(CONF_USERNAME, None)
-        password = configs.get(CONF_PASSWORD, None)
+        username = configs.get(CONF_USERNAME, '').lower()
+        password = configs.get(CONF_PASSWORD, '')
         install_id = configs.get(CONF_INSTALL_ID, None)
         install_name = configs.get(CONF_INSTALL_NAME, None)
 
@@ -127,7 +130,7 @@ class DabPumpsCoordinatorFactory:
         # Get properties from the config_entry
         hass = async_get_hass()
         configs = {
-            CONF_USERNAME: username,
+            CONF_USERNAME: username.lower(),
             CONF_PASSWORD: password,
         }
         options = {}
@@ -142,7 +145,7 @@ class DabPumpsCoordinatorFactory:
         return coordinator
     
 
-class DabPumpsCoordinator(DataUpdateCoordinator):
+class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],dict[str,DabPumpsDeviceConfig],dict[str,DabPumpsDeviceState]]]):
     """My custom coordinator."""
 
     def __init__(self, hass: HomeAssistant, config_entry_id: str, api: DabPumpsApiWrap, configs: dict[str,Any], options: dict[str,Any]):
@@ -155,7 +158,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             # Name of the data. For logging purposes.
             name=NAME,
             # Polling interval. Will only be polled if there are subscribers.
-            update_interval=timedelta(seconds=options.get(CONF_POLLING_INTERVAL, DEFAULT_POLLING_INTERVAL)),
+            update_interval=timedelta(seconds=DEFAULT_POLLING_INTERVAL),
             update_method=self._async_update_data,
         )
 
@@ -220,21 +223,19 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
 
     @property
-    def user_role(self) -> str:
+    def user_role(self) -> DabPumpsUserRole:
         """
         Return the user role for this install_id
-        Note: we only use the first character
-
         Once determined, value is cached for performance. Note that it is only used during startup.
         """
         if self._user_role is not None:
             return self._user_role
         
         if not self._install_id in self._api.install_map:
-            return DabPumpsUserRole.to_char(DabPumpsUserRole.CUSTOMER_FREE)     # should not happen, don't cache
+            return DabPumpsUserRole.CUSTOMER_FREE     # should not happen, don't cache
 
         install = self._api.install_map[self._install_id]
-        self._user_role = DabPumpsUserRole.to_char(install.role)
+        self._user_role = install.role
 
         # In some specific situations we deviate from the received role:
         if not self.device_config_includes_free_account:
@@ -259,7 +260,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
 
         if upgrade_reason is not None and upgrade_role is not None:
             _LOGGER.debug(f"Upgrade role from {install.role} to simulate {upgrade_role} {upgrade_reason}")
-            self._user_role = DabPumpsUserRole.to_char(upgrade_role)
+            self._user_role = upgrade_role
 
         return self._user_role
     
@@ -276,18 +277,18 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         if self._config_includes_free_account is not None:
             return self._config_includes_free_account
         
-        role_free_chars = set(DabPumpsUserRole.to_char(role) for role in [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE])
+        roles_free = [DabPumpsUserRole.CUSTOMER_FREE, DabPumpsUserRole.INSTALLER_FREE]
         
         for device in self._api.device_map.values():
             if device.install_id != self.install_id:
                 continue
 
-            config = self._api.config_map.get(device.config_id)
+            config = self._api.device_config_map.get(device.config_id)
             if not config:
                 continue
             
             for param in config.meta_params.values():
-                if any(char in param.view or char in param.change for char in role_free_chars):
+                if any(role in param.view or role in param.change for role in roles_free):
                     self._config_includes_free_account = True
                     return True
 
@@ -359,13 +360,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
             dr.async_get_or_create(
                 config_entry_id = config_entry.entry_id,
                 identifiers = {(DOMAIN, device_id)},
-                connections = {(CONNECTION_NETWORK_MAC, device.mac_address)} if device.mac_address else None,
-                name = device.name,
-                manufacturer =  device.vendor,
-                model = device.product,
-                serial_number = device.serial,
-                hw_version = device.hw_version,
-                sw_version = device.sw_version,
+                connections = {(CONNECTION_NETWORK_MAC, device.mac_address)} if device.mac_address is not None else None,
+                name = str(device.name) if device.name is not None else None,
+                manufacturer =  str(device.vendor) if device.vendor is not None else None,
+                model = str(device.product) if device.product is not None else None,
+                serial_number = str(device.serial) if device.serial is not None else None,
+                hw_version = str(device.hw_version) if device.hw_version is not None else None,
+                sw_version = str(device.sw_version) if device.sw_version is not None else None,
             )
             valid_ids[device.serial] = (DOMAIN, device_id)
 
@@ -452,9 +453,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator):
         await self._async_detect_changes()
 
         #_LOGGER.debug(f"device_map: {self._api.device_map}")
-        #_LOGGER.debug(f"config_map: {self._api.config_map}")
-        #_LOGGER.debug(f"status_map: {self._api.status_map}")
-        return (self._api.device_map, self._api.config_map, self._api.status_map)
+        #_LOGGER.debug(f"config_map: {self._api.device_config_map}")
+        #_LOGGER.debug(f"status_map: {self._api.device_state_map}")
+        return (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
     
     
     async def async_modify_data(self, status_key: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:

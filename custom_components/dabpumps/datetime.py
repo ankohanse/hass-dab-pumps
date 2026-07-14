@@ -54,7 +54,7 @@ class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
         """ Initialize the sensor. """
         CoordinatorEntity.__init__(self, coordinator)
         DabPumpsEntity.__init__(self, coordinator, status_key, device, params)
@@ -64,7 +64,7 @@ class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
             _LOGGER.error(f"Unexpected parameter type ({params.type}) for a datetime entity")
 
         # The unique identifier for this sensor within Home Assistant
-        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + params.key
+        self.entity_id = ENTITY_ID_FORMAT.format(self._attr_unique_id) # Device.name + status_key
         
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
@@ -73,31 +73,34 @@ class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
         self._attr_entity_category = self.get_entity_category()
 
         # Create all value related attributes
-        self._update_attributes(status, force=True)
+        self._update_attributes(status, status_ts, force=True)
     
     
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
         # find the correct status corresponding to this entity
-        (_, _, status_map) = self._coordinator.data
+        (_, _, device_state_map) = self._coordinator.data
         
-        status = status_map.get(self._status_key) if status_map is not None else None
-        if status is None:
-            return
+        state = device_state_map.get(self._device.serial) if device_state_map is not None else None
+        if state is None:
+            return 
+        
+        status = state.status.get(self._status_key)
+        status_ts = state.status_ts
 
         # Update any attributes
-        if self._update_attributes(status):
+        if self._update_attributes(status, status_ts):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
         
         # Is the status expired?
-        if not status.status_ts or status.status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
             # DAB Pumps value is an Iso string in local time
             if status.value is not None:
                 attr_val = datetime.fromisoformat(status.value).astimezone()
@@ -107,7 +110,7 @@ class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
             attr_val = None
 
         # update value if it has changed
-        changed = super()._update_attributes(status, force)
+        changed = super()._update_attributes(status, status_ts, force)
 
         if force or self._attr_native_value != attr_val:
 
@@ -131,7 +134,7 @@ class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
         
         status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, value=entity_value)
         if status is not None:
-            self._update_attributes(status, force=True)
+            self._update_attributes(status, utcnow(), force=True)
             self.async_write_ha_state()
 
 
