@@ -79,9 +79,10 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     # Create entities for all platforms (sensor, switch, ...)
     await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
 
-    # Cleanup entities and devices
+    # Cleanup obsolete entities and devices and subscribe to changes to current devices
     await coordinator.async_cleanup_entities(config_entry)
     await coordinator.async_cleanup_devices(config_entry)
+    await coordinator.async_subscribe_devices(config_entry)
 
     # Reload entry when it is updated via config flow
     config_entry.async_on_unload(config_entry.add_update_listener(_async_update_listener))

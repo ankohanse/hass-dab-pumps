@@ -4,12 +4,14 @@ import asyncio
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Final
+from typing import Any, Final, List
 import httpx
 import logging
+import ssl
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.httpx_client import create_async_httpx_client
+from homeassistant.helpers import httpx_client as hass_httpx_client
+from homeassistant.util import ssl as hass_ssl
 
 from pydabpumps import (
     AsyncDabPumps,
@@ -145,15 +147,19 @@ class DabPumpsApiWrap(AsyncDabPumps):
         self._password = password
         self._language = language
 
-        # Create a fresh http client
-        client: httpx.AsyncClient = create_async_httpx_client(hass) 
+        # Create a fresh http client and ssl context
+        client: httpx.AsyncClient = hass_httpx_client.create_async_httpx_client(hass)
+        ssl_context: ssl.SSLContext = hass_ssl.get_default_context()
     
         # Initialize the actual api
-        super().__init__(username, password, client=client)
+        super().__init__(username, password, client=client, ssl_context=ssl_context)
         super().set_diagnostics(self._diag_api_handler)
 
         # Other properties
         self._fetch_ts: dict[str, datetime] = {}
+
+        # Coordinator listener to report back any changes in the data
+        self._async_data_listener = None
 
         # Persisted cached data in case communication to DAB Pumps fails
         self._hass: HomeAssistant = hass
@@ -195,7 +201,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         await super().login()
                         
                         # Fetch the list of installations
-                        await self._async_detect_installations(expiry=0, ignore=False)
+                        await self._async_poll_installations(expiry=0, ignore=False)
 
                     case DabPumpsFetchMethod.CACHE:
                         raise Exception(f"Fetch from cache is not supported during config")
@@ -238,16 +244,16 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
                         # Once a day, attempt to refresh
                         # - list of translations
-                        await self._async_detect_strings(self._language, expiry=24*60*60, ignore=ignore_periodic_refresh)
+                        await self._async_poll_strings(self._language, expiry=24*60*60, ignore=ignore_periodic_refresh)
 
                         # Once an hour, attempt to refresh
                         # - list of installations (just for diagnostics)
                         # - installation devices, additional device details and device configurations
-                        await self._async_detect_installations(expiry=60*60, ignore=ignore_periodic_refresh)
-                        await self._async_detect_install_details(install_id, expiry=60*60, ignore=ignore_periodic_refresh)
+                        await self._async_poll_installations(expiry=60*60, ignore=ignore_periodic_refresh)
+                        await self._async_poll_install_details(install_id, expiry=60*60, ignore=ignore_periodic_refresh)
 
-                        # Always fetch device statuses
-                        await self._async_detect_install_statuses(install_id, expiry=0, ignore=False)
+                        # Once a minute fetch device statuses
+                        await self._async_poll_install_statuses(install_id, expiry=60, ignore=False)
 
                         # Update the persisted cache
                         await self._async_write_cache(install_id)
@@ -277,6 +283,40 @@ class DabPumpsApiWrap(AsyncDabPumps):
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
         return False
     
+
+    async def async_subscribe_to_push_data(self, devices: List[DabPumpsDevice], callback):
+        """
+        Subscribe to changes in device state
+        """
+        try:
+            # Remember how to report back data changes to the coordinator
+            self._async_data_listener = callback
+
+            # Register listeners for changes in remote data
+            for device in devices:
+                await super().on_device_state(device.serial, self._on_device_state_handler)
+
+        except Exception as e:
+            _LOGGER.info(f"{e}")
+
+
+    async def _on_device_state_handler(self, device_serial:str, state:DabPumpsDeviceState):
+        """
+        Handle updated device state received from the remote servers
+        """
+        try:
+            device = self._device_map.get(device_serial)
+            if device is None:
+                return
+        
+            # Signal to the coordinator that there were changes in the api data
+            # Statuses in self._device_state_map have already been updated
+            if self._async_data_listener is not None:
+                await self._async_data_listener()
+
+        except Exception as e:
+            _LOGGER.info(f"{e}")
+
 
     async def async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
         ex_first = None
@@ -378,7 +418,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 _LOGGER.info(f"Retry from {str(fetch_method)} now")
 
 
-    async def _async_detect_installations(self, expiry:int=0, ignore:bool=False):
+    async def _async_poll_installations(self, expiry:int=0, ignore:bool=False):
         """
         Attempt to refresh the list of installations
         """
@@ -401,7 +441,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         return super().install_map
 
 
-    async def _async_detect_install_details(self, install_id: str, expiry:int=0, ignore:bool=False):
+    async def _async_poll_install_details(self, install_id: str, expiry:int=0, ignore:bool=False):
         """
         Attempt to refresh installation details and devices when the cached one expires
         """
@@ -422,7 +462,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 raise e from None
 
 
-    async def _async_detect_install_statuses(self, install_id:str, expiry:int=0, ignore:bool=False):
+    async def _async_poll_install_statuses(self, install_id:str, expiry:int=0, ignore:bool=False):
         """
         Fetch device statuses for all devices in an install
         """
@@ -450,7 +490,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         return 
     
 
-    async def _async_detect_strings(self, language:str, expiry:int=0, ignore:bool=False):
+    async def _async_poll_strings(self, language:str, expiry:int=0, ignore:bool=False):
         """
         Attempt to refresh the list of translations (once a day)
         """

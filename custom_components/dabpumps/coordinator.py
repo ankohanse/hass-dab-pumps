@@ -6,7 +6,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.core import async_get_hass
 from homeassistant.helpers import device_registry
 from homeassistant.helpers import entity_registry
@@ -408,6 +408,16 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
                 er.async_remove(entity.entity_id)
 
 
+    async def async_subscribe_devices(self, config_entry: ConfigEntry):
+        """
+        Make sure we are subscribed to receive updated state changes for all devices
+        """
+        _LOGGER.info(f"Subscribe to device state changes for installation '{self._install_name}'")
+
+        install_devices = [ d for d in self._api.device_map.values() if d.install_id == self._install_id ]
+        await self._api.async_subscribe_to_push_data(install_devices, self._async_push_data)
+
+
     async def async_config_flow_data(self):
         """
         Fetch installation data from API.
@@ -432,6 +442,26 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
             return None
 
 
+    async def async_modify_data(self, status_key: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
+        """
+        Set an entity param via the API.
+        """
+        status = self._api.status_map.get(status_key) if self._api.status_map is not None else None
+        if not status:
+            return None # Not found
+
+        # update the remote value
+        success = await self._api.async_change_device_status(status, code=code, value=value)
+        if success:
+            status.code = code if code != None else status.code
+            status.value = value if value != None else status.value
+            status.update_ts = utcnow()
+
+            return status
+        else:
+            return None
+
+    
     async def _async_update_data(self):
         """
         Fetch sensor data from API.
@@ -457,27 +487,15 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
         #_LOGGER.debug(f"status_map: {self._api.device_state_map}")
         return (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
     
-    
-    async def async_modify_data(self, status_key: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
+
+    @callback
+    async def _async_push_data(self):
         """
-        Set an entity param via the API.
+        Push new sensor data from API to all our listening entities.
         """
-        status = self._api.status_map.get(status_key) if self._api.status_map is not None else None
-        if not status:
-            return None # Not found
+        self.async_update_listeners()
 
-        # update the remote value
-        success = await self._api.async_change_device_status(status, code=code, value=value)
-        if success:
-            status.code = code if code != None else status.code
-            status.value = value if value != None else status.value
-            status.update_ts = utcnow()
 
-            return status
-        else:
-            return None
-
-    
     async def _async_detect_changes(self):
         """Detect changes in the installation and trigger a integration reload if needed"""
 
