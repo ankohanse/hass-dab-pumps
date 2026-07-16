@@ -252,8 +252,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         await self._async_poll_installations(expiry=60*60, ignore=ignore_periodic_refresh)
                         await self._async_poll_install_details(install_id, expiry=60*60, ignore=ignore_periodic_refresh)
 
-                        # Once a minute fetch device statuses
-                        await self._async_poll_install_statuses(install_id, expiry=60, ignore=False)
+                        # Once every 5 minutes fetch device statuses
+                        await self._async_poll_install_statuses(install_id, expiry=5*60, ignore=False)
 
                         # Update the persisted cache
                         await self._async_write_cache(install_id)
