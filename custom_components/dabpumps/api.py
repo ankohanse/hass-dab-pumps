@@ -454,6 +454,10 @@ class DabPumpsApiWrap(AsyncDabPumps):
             await super().fetch_install_details(install_id)
             self._fetch_ts[context] = utcnow()
 
+            # The call above alredy has retrieved all statuses for this install
+            context = f"statuses {install_id}"
+            self._fetch_ts[context] = utcnow()
+
         except Exception as e:
             # Ignore issues if this is just a periodic update
             if ignore:
