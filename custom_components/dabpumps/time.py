@@ -16,7 +16,8 @@ from pydabpumps import (
     DabPumpsDevice,
     DabPumpsParams,
     DabPumpsParamType,
-    DabPumpsStatus
+    DabPumpsStatus,
+    DabPumpsStatusCode
 )
 
 from .const import (
@@ -115,16 +116,23 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         
         # Is the status expired?
         if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
-            # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (23:59).
-            # TimeEntity expects time object and can only be between 00:00 and 23:59
-            # We sneakily replace value 1440 (24:00) into 23:59
-            if int(status.value) >= 86340:
-                attr_val = time(23, 59)
+
+            if status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
+                # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (24:00).
+                # TimeEntity expects time object and can only be between 00:00 and 23:59
+                # We sneakily replace value 86340 (24:00) into 23:59
+                if int(status.value) >= 86340:
+                    attr_val = time(23, 59)
+                else:
+                    hour = int(status.value // 3600)
+                    minute = int( (status.value % 3600) // 60)
+                    attr_val = time(hour, minute)
             else:
-                hour = int(status.value // 3600)
-                minute = int( (status.value % 3600) // 60)
-                attr_val = time(hour, minute)
+                # No value available
+                attr_val = None
+
         else:
+            # Expired
             attr_val = None
 
         # update value if it has changed
@@ -144,7 +152,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
     async def async_set_value(self, value: time) -> None:
         """Change the date/time"""
         
-        # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (23:59).
+        # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (24:00).
         # TimeEntity expects time object and can only be between 00:00 and 23:59
         entity_value = value.hour * 3600 + value.minute * 60
         trace_value = value

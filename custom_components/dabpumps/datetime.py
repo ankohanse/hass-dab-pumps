@@ -18,7 +18,8 @@ from pydabpumps import (
     DabPumpsDevice,
     DabPumpsParams,
     DabPumpsParamType,
-    DabPumpsStatus
+    DabPumpsStatus,
+    DabPumpsStatusCode
 )
 
 from .const import (
@@ -102,11 +103,13 @@ class DabPumpsDateTime(CoordinatorEntity, DateTimeEntity, DabPumpsEntity):
         # Is the status expired?
         if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
             # DAB Pumps value is an Iso string in local time
-            if status.value is not None:
+            if status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
                 attr_val = datetime.fromisoformat(status.value).astimezone()
             else:
+                # No value available
                 attr_val = None
         else:
+            # Expired
             attr_val = None
 
         # update value if it has changed

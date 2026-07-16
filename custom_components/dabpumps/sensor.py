@@ -22,7 +22,8 @@ from collections import namedtuple
 from pydabpumps import (
     DabPumpsDevice,
     DabPumpsParams,
-    DabPumpsStatus
+    DabPumpsStatus,
+    DabPumpsStatusCode
 )
 
 from .const import (
@@ -110,8 +111,14 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
           
         # Is the status expired?
         if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
-            attr_val = status.value
+
+            if status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
+                attr_val = status.value
+            else:
+                # No value available
+                attr_val = None
         else:
+            # Expired
             attr_val = None
 
         # Gather other attributes

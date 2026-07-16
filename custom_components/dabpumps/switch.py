@@ -129,9 +129,11 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
                 attr_state = STATE_OFF
 
             else:
+                # No value available
                 attr_is_on = None
                 attr_state = None
         else:
+            # Expired
             attr_is_on = None
             attr_state = None
 

@@ -128,6 +128,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
             elif status.code in BINARY_SENSOR_VALUES_OFF:
                 is_on = False
             else:
+                # No value available
                 is_on = None
         else:
             # Expired
