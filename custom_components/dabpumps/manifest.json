@@ -9,6 +9,6 @@
   "iot_class": "cloud_push",
   "issue_tracker": "https://github.com/ankohanse/hass-dab-pumps/issues",
   "loggers": ["custom_components.dabpumps"],
-  "requirements": ["pydabpumps==2.0.3"],
+  "requirements": ["pydabpumps==2.0.4"],
   "version": "2026.09.1"
 }

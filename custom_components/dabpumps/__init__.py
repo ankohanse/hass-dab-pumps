@@ -51,8 +51,8 @@ async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> b
     
     # Assign the HA configured log level of this module to the pydabpumps module
     log_level: int = _LOGGER.getEffectiveLevel()
-    lib_logger: logging.Logger = logging.getLogger("pydabpumps")
-    lib_logger.setLevel(log_level)
+    logging.getLogger("pydabpumps").setLevel(log_level)
+    logging.getLogger("autobahn").setLevel(logging.ERROR)
 
     _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")
 
