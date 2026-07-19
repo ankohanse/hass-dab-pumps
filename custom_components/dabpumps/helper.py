@@ -25,6 +25,7 @@ from .coordinator import (
     DabPumpsCoordinator,
 )
 from .data import (
+    ParamFlags,
     ParamInfo,
 )
 
@@ -111,6 +112,9 @@ class DabPumpsEntityHelper:
         # Find the datapoint containing info about how to handle this param
         info = ParamInfo.find(params.group, key)
 
+        if ParamFlags.HIDDEN_AS_DISABLED in info.flg and status.code in [DabPumpsStatusCode.HIDDEN]:
+            status.code = DabPumpsStatusCode.DISABLED
+
         # Could it be a button/switch/select/number config or control entity? 
         # Needs to have all of:
         # - allowed as visible and modifyable entity in the Datapoints
@@ -120,12 +124,12 @@ class DabPumpsEntityHelper:
             # Is it a a button?
             if params.type == 'enum':
                 # With exactly 1 possible value that are of 'press' type it becomes a button
-                # These usually do not have a current status value, so don't check for it
+                # These usually do not have a current status code, so don't check for it
                 if len(params.values or []) == 1:
                     if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
                         return Platform.BUTTON
 
-            # All options below must have an actual status value, otherwise we suppress it
+            # All options below must have an actual status code, otherwise we suppress it
             if status is None or status.code in [DabPumpsStatusCode.HIDDEN]:
                 return None
                 
@@ -147,7 +151,7 @@ class DabPumpsEntityHelper:
                     return Platform.NUMBER
 
             elif params.type == 'settings':
-                if key in ['HolidayModeLocalTimeStart', 'HolidayModeLocalTimeEnd']:
+                if params.family == 'time' and params.unit == '':
                     return Platform.DATETIME
                 
             else:
@@ -161,8 +165,12 @@ class DabPumpsEntityHelper:
         # - have a status value that does not indicate it should be hidden
         # 
         # Note: no need to check view rights for the user role; if we get inside this function then we have a status value for the entity
-        if info is not None and info.vis and status is not None and status.code not in [DabPumpsStatusCode.HIDDEN]:
+        if info is not None and info.vis:
 
+            # All options below must have an actual status code, otherwise we suppress it
+            if status is None or status.code in [DabPumpsStatusCode.HIDDEN]:
+                return None
+            
             if params.type == 'enum':
                 # Suppress buttons if we only have view rights
                 if len(params.values or []) == 1:

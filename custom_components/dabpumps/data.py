@@ -6,9 +6,10 @@ Do not place code that is specific to only one of these integration in here!
 """
 import logging
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from fnmatch import fnmatch
+from typing import List
 
 from homeassistant.components.number import NumberDeviceClass
 from homeassistant.components.sensor import SensorDeviceClass
@@ -43,6 +44,9 @@ class ParamStateClass(StrEnum):
     TOTAL_INC = "total_inc"
     MEASUREMENT = "meas"
 
+class ParamFlags(StrEnum):
+    HIDDEN_AS_DISABLED = 'h=d'  # Interpret a 'h' (hidden) status-code as 'd' (disabled)
+
 
 @dataclass
 class PI:
@@ -52,11 +56,15 @@ class PI:
     mod: bool = False           # Is the parameter allowed to be edited or always rendered as read-only sensor
     cat: ParamCategory = None   # Entity Category (Sensors/Controls/Config/Diagnostics)
     cls: ParamStateClass = None # State Class (None, Total, Total Increasing, Measurement)
+    flg: List[str] = field(default_factory=list) # Flags to influence miscelaneous behavior
 
 PARAM_INFOS = [
     # The first match on group and key is leading. Subsequent matches are ignored.
 
     # Groups that are normally visible and can be modified (with exceptions for specific keys)
+    PI(grp="Extra Comfort",        key="PowerShowerCountdown",            vis=True,  mod=True,  cat="ctrl", cls="meas", flg=['h=d']),
+    PI(grp="Extra Comfort",        key="SleepModeCountdown",              vis=True,  mod=True,  cat="ctrl", cls="meas", flg=['h=d']),
+    PI(grp="Extra Comfort",        key="HolidayModeCountdown",            vis=True,  mod=True,  cat="ctrl", cls="meas", flg=['h=d']),
     PI(grp="Extra Comfort",        key="",                                vis=True,  mod=True,  cat="ctrl", cls="meas"),
     PI(grp="Setpoint",             key="",                                vis=True,  mod=True,  cat="conf", cls="meas"),
 
