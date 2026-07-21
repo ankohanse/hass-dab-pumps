@@ -442,21 +442,16 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
             return None
 
 
-    async def async_modify_data(self, status_key: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
+    async def async_modify_data(self, device_serial: str, status_key: str, entity_id: str, code: str|None = None, value: Any|None = None) -> DabPumpsStatus|None:
         """
         Set an entity param via the API.
         """
-        status = self._api.status_map.get(status_key) if self._api.status_map is not None else None
-        if not status:
-            return None # Not found
-
         # update the remote value
-        success = await self._api.async_change_device_status(status, code=code, value=value)
+        success = await self._api.async_change_device_status(device_serial, status_key, code=code, value=value)
         if success:
-            status.code = code if code != None else status.code
-            status.value = value if value != None else status.value
-            status.update_ts = utcnow()
-
+            # Return the new status
+            state = self._api.device_state_map.get(device_serial)
+            status = state.status.get(status_key) if state is not None else None
             return status
         else:
             return None

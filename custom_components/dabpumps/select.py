@@ -144,7 +144,7 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
         if code is None:
             return
 
-        status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, code=code, value=value)
+        status = await self._coordinator.async_modify_data(self._device.serial, self._status_key, self.entity_id, code=code, value=value)
         if status is not None:
             self._update_attributes(status, utcnow(), force=True)
             self.async_write_ha_state()

@@ -318,7 +318,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
             _LOGGER.info(f"{e}")
 
 
-    async def async_change_device_status(self, status: DabPumpsStatus, code: str|None = None, value: Any|None = None):
+    async def async_change_device_status(self, device_serial: str, status_key: str, code: str|None = None, value: Any|None = None):
         ex_first = None
         ts_start = utcnow()
         fetch_web_done = False
@@ -335,7 +335,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         await super().login()
 
                         # Attempt to change the device status via the API
-                        await super().change_device_status(status.serial, status.key, code=code, value=value)
+                        await super().change_device_status(device_serial, status_key, code=code, value=value)
 
                     case DabPumpsFetchMethod.CACHE:
                         continue
@@ -486,13 +486,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
             else:
                 raise e from None
             
-
-    async def _async_change_device_status(self, serial:str, key:str, code:str=None, value:str=None):
-        """
-        Update a device status to a new value
-        """
-        return 
-    
 
     async def _async_poll_strings(self, language:str, expiry:int=0, ignore:bool=False):
         """

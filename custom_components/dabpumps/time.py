@@ -159,7 +159,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
 
         _LOGGER.info(f"Set {self.entity_id} to {trace_value} ({entity_value})")
         
-        status = await self._coordinator.async_modify_data(self._status_key, self.entity_id, value=entity_value)
+        status = await self._coordinator.async_modify_data(self._device.serial, self._status_key, self.entity_id, value=entity_value)
         if status is not None:
             self._update_attributes(status, utcnow(), force=True)
             self.async_write_ha_state()
