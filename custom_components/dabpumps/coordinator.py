@@ -484,10 +484,11 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
     
 
     @callback
-    async def _async_push_data(self):
+    async def _async_push_data(self, device_serial:str):
         """
         Push new sensor data from API to all our listening entities.
         """
+        self.data = (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
         self.async_update_listeners()
 
 

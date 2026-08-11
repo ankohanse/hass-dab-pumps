@@ -252,8 +252,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         await self._async_poll_installations(expiry=60*60, ignore=ignore_periodic_refresh)
                         await self._async_poll_install_details(install_id, expiry=60*60, ignore=ignore_periodic_refresh)
 
-                        # Once every 5 minutes fetch device statuses
-                        await self._async_poll_install_statuses(install_id, expiry=5*60, ignore=False)
+                        # Once a minute fetch device statuses
+                        await self._async_poll_install_statuses(install_id, ignore=False)
 
                         # Update the persisted cache
                         await self._async_write_cache(install_id)
@@ -305,14 +305,10 @@ class DabPumpsApiWrap(AsyncDabPumps):
         Handle updated device state received from the remote servers
         """
         try:
-            device = self._device_map.get(device_serial)
-            if device is None:
-                return
-        
             # Signal to the coordinator that there were changes in the api data
-            # Statuses in self._device_state_map have already been updated
+            # Statuses in self.device_state_map have already been updated
             if self._async_data_listener is not None:
-                await self._async_data_listener()
+                await self._async_data_listener(device_serial)
 
         except Exception as e:
             _LOGGER.info(f"{e}")
@@ -618,7 +614,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 "install_map": self.install_map,
                 "device_map": self.device_map,
                 "device_config_map": self.device_config_map,
-                "device_state_map": self._device_state_map,
+                "device_state_map": self.device_state_map,
                 "string_map": self.string_map,
                 "string_map_lang": self.string_map_lang,
             },
