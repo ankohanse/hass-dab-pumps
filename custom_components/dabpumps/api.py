@@ -15,11 +15,14 @@ from homeassistant.util import ssl as hass_ssl
 
 from pydabpumps import (
     AsyncDabPumps,
+    DabPumpsAccessTokenInfo,
     DabPumpsInstall,
     DabPumpsDevice,
     DabPumpsDeviceConfig,
     DabPumpsDeviceState,
+    DabPumpsLoginInfo,
     DabPumpsParams,
+    DabPumpsRefreshTokenInfo,
     DabPumpsStatus,
     DabPumpsUserRole,
     DabPumpsHistoryItem,
@@ -253,7 +256,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         await self._async_poll_install_details(install_id, expiry=60*60, ignore=ignore_periodic_refresh)
 
                         # Once a minute fetch device statuses
-                        await self._async_poll_install_statuses(install_id, ignore=False)
+                        await self._async_poll_install_statuses(install_id, expiry=5*60, ignore=False)
 
                         # Update the persisted cache
                         await self._async_write_cache(install_id)
@@ -516,6 +519,10 @@ class DabPumpsApiWrap(AsyncDabPumps):
         await self._cache.async_read()
 
         # Set the updated values
+        login_info_dict = asdict(self._login_info)
+        access_token_dict = asdict(self._access_token_info)
+        refresh_token_dict = asdict(self._refresh_token_info)
+        
         install_serials = { device.serial for device in self.device_map.values() if device.install_id == install_id }
         install_configs = { device.config_id for device in self.device_map.values() if device.install_id == install_id }
 
@@ -523,6 +530,10 @@ class DabPumpsApiWrap(AsyncDabPumps):
         device_dict = { k:asdict(v) for k,v in self.device_map.items() if v.serial in install_serials }
         device_config_dict = { k:asdict(v) for k,v in self.device_config_map.items() if v.id in install_configs }
         device_state_dict = { k:asdict(v) for k,v in self.device_state_map.items() if k in install_serials }
+        
+        self._cache.set(f"login_info {self._username}", login_info_dict )
+        self._cache.set(f"access_token_info {self._username}", access_token_dict )
+        self._cache.set(f"refresh_token_info {self._username}", refresh_token_dict )
         
         self._cache.set(f"install_map {self._username}", install_dict )
         self._cache.set(f"device_map {install_id}", device_dict )
@@ -542,6 +553,10 @@ class DabPumpsApiWrap(AsyncDabPumps):
         await self._cache.async_read()
 
         # Get all mappings, these will be returned as pure dicts and need to be converted into the proper dataclasses
+        login_info_dict = self._cache.get(f"login_info {self._username}", {})
+        access_token_dict = self._cache.get(f"access_token_info {self._username}", {})
+        refresh_token_dict = self._cache.get(f"refresh_token_info {self._username}", {})
+        
         install_dict = self._cache.get(f"install_map {self._username}", {})
         device_dict = self._cache.get(f"device_map {install_id}", {})
         device_config_dict = self._cache.get(f"device_config_map {install_id}", {})
@@ -549,6 +564,10 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
         if not install_dict or not device_dict or not device_config_dict or not device_state_dict:
             raise Exception(f"Not all data found in {self._cache.key}")
+        
+        self._login_info = DabPumpsLoginInfo(**login_info_dict)
+        self._access_token_info = DabPumpsAccessTokenInfo(**access_token_dict)
+        self._refresh_token_info = DabPumpsRefreshTokenInfo(**refresh_token_dict)
         
         self._install_map.update( { k:DabPumpsInstall(**v) for k,v in install_dict.items() } )
         self._device_map.update( { k:DabPumpsDevice(**v) for k,v in device_dict.items() } )
