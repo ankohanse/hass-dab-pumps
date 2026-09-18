@@ -192,13 +192,11 @@ class DabPumpsStore(Store[dict]):
             # Read the persisted file
             _LOGGER.info(f"Read persisted {self.key}")
             self._store_data = await super().async_load() or {}
+            self._last_read = utcnow()
 
         except Exception as ex:
             _LOGGER.warning(f"Exception while reading persisted {self.key}: {ex}")
             self._store_data = {}
-
-        finally:
-            self._last_read = utcnow()
 
 
     async def async_write(self, force: bool = False):
@@ -221,12 +219,10 @@ class DabPumpsStore(Store[dict]):
 
             _LOGGER.info(f"Write persisted {self.key}")
             await super().async_save(self._store_data)
+            self._last_write = utcnow()
 
         except Exception as ex:
             _LOGGER.warning(f"Exception while writing persisted {self.key}: {ex}")
-
-        finally:
-            self._last_write = utcnow()
 
 
     def get(self, item_key: str, item_default: Any = None):
