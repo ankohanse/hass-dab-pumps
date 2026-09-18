@@ -200,8 +200,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         # Logout so we really force a subsequent login and not use an old token
                         if retry == 0:
                             await super().logout()
-
-                        await super().login()
                         
                         # Fetch the list of installations
                         await self._async_poll_installations(expiry=0, ignore=False)
@@ -242,9 +240,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
-                        # Check access token, if needed do a logout, wait and re-login
-                        await super().login()
-
                         # Once a day, attempt to refresh
                         # - list of translations
                         await self._async_poll_strings(self._language, expiry=24*60*60, ignore=ignore_periodic_refresh)
@@ -255,7 +250,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                         await self._async_poll_installations(expiry=60*60, ignore=ignore_periodic_refresh)
                         await self._async_poll_install_details(install_id, expiry=60*60, ignore=ignore_periodic_refresh)
 
-                        # Once a minute fetch device statuses
+                        # Once per couple of minutes fetch device statuses (if not already updated via push-subscription)
                         await self._async_poll_install_statuses(install_id, expiry=5*60, ignore=False)
 
                         # Update the persisted cache
@@ -308,6 +303,11 @@ class DabPumpsApiWrap(AsyncDabPumps):
         Handle updated device state received from the remote servers
         """
         try:
+            # Remember we received a status update for this device,
+            # so we do not need to update it via a poll in current period.
+            context = "statuses {serial}"
+            self._fetch_ts[context] = utcnow()
+
             # Signal to the coordinator that there were changes in the api data
             # Statuses in self.device_state_map have already been updated
             if self._async_data_listener is not None:
@@ -330,10 +330,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
-                        # Check access token, if needed do a logout, wait and re-login
-                        await super().login()
-
                         # Attempt to change the device status via the API
+                        await super().login()
                         await super().change_device_status(device_serial, status_key, code=code, value=value)
 
                     case DabPumpsFetchMethod.CACHE:
@@ -371,10 +369,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
                 match fetch_method:
                     case DabPumpsFetchMethod.WEB:
-                        # Check access token, if needed do a logout, wait and re-login
-                        await super().login()
-
                         # Attempt to change the user role via the API
+                        await super().login()
                         await super().change_install_role(install_id, role_old, role_new)
 
                     case DabPumpsFetchMethod.CACHE:
@@ -427,6 +423,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
             return  # Not yet expired
         
         try:
+            await super().login()
             await super().fetch_install_list()
             self._fetch_ts[context] = utcnow()
 
@@ -450,6 +447,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
             return  # Not yet expired
 
         try:        
+            await super().login()
             await super().fetch_install_details(install_id)
             self._fetch_ts[context] = utcnow()
 
@@ -469,14 +467,27 @@ class DabPumpsApiWrap(AsyncDabPumps):
         """
         Fetch device statuses for all devices in an install
         """
-        context = f"statuses {install_id}"
 
-        if (utcnow() - self._fetch_ts.get(context, utcmin())).total_seconds() < expiry:
-            return  # Not yet expired
+        # Check for expired device statuses. 
+        # Devices are subscribed to cloud updates so could be updated from outside of this function
+        expired = []
+        for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
+            context = "statuses {serial}"
+            if (utcnow() - self._fetch_ts.get(context, utcmin())).total_seconds() > expiry:
+                expired.append(serial)
+
+        if not expired:
+            return
 
         try:
-            await super().fetch_install_statuses(install_id)
+            await super().login()
+            await super().fetch_install_statuses(install_id)    # The api will always fetch status for all devices
+
             self._fetch_ts[context] = utcnow()
+
+            for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
+                context = "statuses {serial}"
+                self._fetch_ts[context] = utcnow()
 
         except Exception as e:
             # Never ignore issues
@@ -496,6 +507,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
             return  # Not yet expired
 
         try:
+            await super().login()
             await super().fetch_strings(language)
             self._fetch_ts[context] = utcnow()
                     
@@ -520,7 +532,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
         # Set the updated values
         login_info_dict = asdict(self._login_info)
-        access_token_dict = asdict(self._access_token_info)
         refresh_token_dict = asdict(self._refresh_token_info)
         
         install_serials = { device.serial for device in self.device_map.values() if device.install_id == install_id }
@@ -532,7 +543,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
         device_state_dict = { k:asdict(v) for k,v in self.device_state_map.items() if k in install_serials }
         
         self._cache.set(f"login_info {self._username}", login_info_dict )
-        self._cache.set(f"access_token_info {self._username}", access_token_dict )
         self._cache.set(f"refresh_token_info {self._username}", refresh_token_dict )
         
         self._cache.set(f"install_map {self._username}", install_dict )
@@ -554,7 +564,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
 
         # Get all mappings, these will be returned as pure dicts and need to be converted into the proper dataclasses
         login_info_dict = self._cache.get(f"login_info {self._username}", {})
-        access_token_dict = self._cache.get(f"access_token_info {self._username}", {})
         refresh_token_dict = self._cache.get(f"refresh_token_info {self._username}", {})
         
         install_dict = self._cache.get(f"install_map {self._username}", {})
@@ -566,7 +575,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
             raise Exception(f"Not all data found in {self._cache.key}")
         
         self._login_info = DabPumpsLoginInfo(**login_info_dict)
-        self._access_token_info = DabPumpsAccessTokenInfo(**access_token_dict)
         self._refresh_token_info = DabPumpsRefreshTokenInfo(**refresh_token_dict)
         
         self._install_map.update( { k:DabPumpsInstall(**v) for k,v in install_dict.items() } )
