@@ -1,11 +1,8 @@
 """__init__.py: The DAB Pumps integration."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
-import json
 from typing import Any
-import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigType
 from homeassistant.const import Platform
@@ -27,6 +24,11 @@ from .const import (
     PLATFORMS,
     CONF_INSTALL_ID,
     CONF_INSTALL_NAME,
+    STORE_KEY_CACHE,
+    STORE_WRITE_PERIOD_CACHE,
+)
+from .store import (
+    DabPumpsStore,
 )
 
 
@@ -108,3 +110,15 @@ async def _async_update_listener(hass: HomeAssistant, config_entry: ConfigEntry)
 
     _LOGGER.debug(f"Detect update of config options {config_entry.options}")
     await hass.config_entries.async_reload(config_entry.entry_id)
+
+
+async def async_remove_entry(hass: HomeAssistant, config_entry: ConfigEntry):
+    """Handle removal of the config-entry"""
+
+    # Remove our static cache file
+    try:
+        cache: DabPumpsStore = DabPumpsStore(hass, STORE_KEY_CACHE, STORE_WRITE_PERIOD_CACHE)
+        await cache.async_remove()
+
+    except Exception as e:
+        _LOGGER.debug(f"Exception: {str(e) or repr(e)}")
