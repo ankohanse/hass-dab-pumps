@@ -270,15 +270,18 @@ class DabPumpsApiWrap(AsyncDabPumps):
                 if not ex_first:
                     ex_first = ex
 
+        # Keep track of how many retries were needed and duration
+        self._update_statistics(retries = retry, duration = utcnow()-ts_start)
+
         if ex_first:
             if isinstance(ex_first, (DabPumpsConnectError,DabPumpsAuthError)):
                 # Log as info, not warning, as we expect the issue to be gone at a next data refresh
                 _LOGGER.info(ex_first)
             else:
                 _LOGGER.warning(ex_first)
+
+            raise ex_first from None
         
-        # Keep track of how many retries were needed and duration
-        self._update_statistics(retries = retry, duration = utcnow()-ts_start)
         return False
     
 
@@ -305,7 +308,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         try:
             # Remember we received a status update for this device,
             # so we do not need to update it via a poll in current period.
-            context = "statuses {serial}"
+            context = f"statuses {device_serial}"
             self._fetch_ts[context] = utcnow()
 
             # Signal to the coordinator that there were changes in the api data
@@ -472,7 +475,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         # Devices are subscribed to cloud updates so could be updated from outside of this function
         expired = []
         for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
-            context = "statuses {serial}"
+            context = f"statuses {serial}"
             if (utcnow() - self._fetch_ts.get(context, utcmin())).total_seconds() > expiry:
                 expired.append(serial)
 
@@ -486,7 +489,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
             self._fetch_ts[context] = utcnow()
 
             for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
-                context = "statuses {serial}"
+                context = f"statuses {serial}"
                 self._fetch_ts[context] = utcnow()
 
         except Exception as e:

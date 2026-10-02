@@ -13,6 +13,8 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.device_registry import DeviceRegistry
 from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import UpdateFailed
+
 
 from homeassistant.const import (
     CONF_USERNAME,
@@ -465,23 +467,26 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
         so entities can quickly look up their data.
         """
         _LOGGER.debug(f"Update data for installation '{self._install_name}'")
+        try:
+            # Fetch the actual data
+            # Note: asyncio.TimeoutError and aiohttp.ClientError are already
+            # handled by the data update coordinator.
+            await self._api.async_detect_data(self._install_id, self._fetch_order)
 
-        # Fetch the actual data
-        # Note: asyncio.TimeoutError and aiohttp.ClientError are already
-        # handled by the data update coordinator.
-        await self._api.async_detect_data(self._install_id, self._fetch_order)
+            # If this was the first fetch, then make sure all next ones use the correct fetch order (web or cache)
+            self._fetch_order = DabPumpsFetchOrder.NEXT
 
-        # If this was the first fetch, then make sure all next ones use the correct fetch order (web or cache)
-        self._fetch_order = DabPumpsFetchOrder.NEXT
+            # Periodically detect changes in the installation and trigger reload of the integration if needed.
+            await self._async_detect_changes()
 
-        # Periodically detect changes in the installation and trigger reload of the integration if needed.
-        await self._async_detect_changes()
+            #_LOGGER.debug(f"device_map: {self._api.device_map}")
+            #_LOGGER.debug(f"config_map: {self._api.device_config_map}")
+            #_LOGGER.debug(f"status_map: {self._api.device_state_map}")
+            return (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
+        
+        except Exception as ex:
+            raise UpdateFailed(f"Failed to request values from the api: {ex}") from ex    
 
-        #_LOGGER.debug(f"device_map: {self._api.device_map}")
-        #_LOGGER.debug(f"config_map: {self._api.device_config_map}")
-        #_LOGGER.debug(f"status_map: {self._api.device_state_map}")
-        return (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
-    
 
     @callback
     async def _async_push_data(self, device_serial:str):
