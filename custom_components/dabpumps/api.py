@@ -456,8 +456,9 @@ class DabPumpsApiWrap(AsyncDabPumps):
             self._fetch_ts[context] = utcnow()
 
             # The call above alredy has retrieved all statuses for this install
-            context = f"statuses {install_id}"
-            self._fetch_ts[context] = utcnow()
+            for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
+                context = f"statuses {serial}"
+                self._fetch_ts[context] = utcnow()
 
         except Exception as e:
             # Ignore issues if this is just a periodic update
@@ -486,8 +487,6 @@ class DabPumpsApiWrap(AsyncDabPumps):
         try:
             await super().login()
             await super().fetch_install_statuses(install_id)    # The api will always fetch status for all devices
-
-            self._fetch_ts[context] = utcnow()
 
             for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
                 context = f"statuses {serial}"
