@@ -65,7 +65,7 @@ class DabPumpsEntityHelper:
         valid_unique_ids: list[str] = []
 
         for device in device_map.values():
-            # skip devices that are in this installation
+            # skip devices that are not in this installation
             if device.install_id != self._coordinator.install_id:
                 continue
 
