@@ -11,10 +11,12 @@ import homeassistant.helpers.config_validation as cv
 from homeassistant import config_entries, exceptions
 
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.components.diagnostics.util import async_redact_data
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import IntegrationError
 from homeassistant.helpers.selector import selector
+
 
 from homeassistant.const import (
     CONF_USERNAME,
@@ -23,13 +25,14 @@ from homeassistant.const import (
 )
 
 from pydabpumps import (
+    DabPumpsInstall,
     DabPumpsUserRole,
     DabPumpsError,
     DabPumpsAuthError,
 ) 
 
-
 from .const import (
+    DIAGNOSTICS_REDACT,
     DOMAIN,
     DEFAULT_USERNAME,
     DEFAULT_PASSWORD,
@@ -44,7 +47,6 @@ from .const import (
     LANGUAGE_TEXT_AUTO,
     LANGUAGE_TEXT_FALLBACK,
 )
-
 from .coordinator import (
     DabPumpsCoordinatorFactory,
     DabPumpsCoordinator,
@@ -63,17 +65,17 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     
     def __init__(self):
         """Initialize config flow."""
-        self._username = None
-        self._password = None
-        self._install_map = {}
-        self._install_id = None
-        self._install_name = None
-        self._errors = {}
+        self._username: str = None
+        self._password: str = None
+        self._install_map: dict[str,DabPumpsInstall] = {}
+        self._install_id: str = None
+        self._install_name: str = None
+        self._errors: dict[str,str] = {}
+        self._coordinator: DabPumpsCoordinator = None
 
         # Assign the HA configured log level of this module to the v module
         log_level: int = _LOGGER.getEffectiveLevel()
-        lib_logger: logging.Logger = logging.getLogger("pydabpumps")
-        lib_logger.setLevel(log_level)
+        logging.getLogger("pydabpumps").setLevel(log_level)
 
         _LOGGER.info(f"Logging at {logging.getLevelName(log_level)}")
     
@@ -83,10 +85,10 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.info("Trying connection...")
         
         self._errors = {}
-        coordinator = DabPumpsCoordinatorFactory.create_temp(self._username, self._password)
+        self._coordinator = DabPumpsCoordinatorFactory.create_temp(self._username, self._password)
         try:
             # Call the DabPumpsApi with the detect_device method
-            self._install_map = await coordinator.async_config_flow_data()
+            self._install_map = await self._coordinator.async_config_flow_data()
             
             if self._install_map:
                 _LOGGER.info("Successfully connected!")
@@ -112,10 +114,9 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.info(f"Trying update of user role from {role_old} to {role_new}...")
         
         self._errors = {}
-        coordinator = DabPumpsCoordinatorFactory.create_temp(self._username, self._password)
         try:
             # Call the DabPumpsApi with the update_role
-            role_rsp = await coordinator.async_config_change_role(self._install_id, role_old, role_new)
+            role_rsp = await self._coordinator.async_config_change_role(self._install_id, role_old, role_new)
             
             if role_rsp is not None:
                 _LOGGER.info("Successfully updated role!")
@@ -139,7 +140,7 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle a flow initialized by the user."""
         
         if user_input is not None:
-            _LOGGER.debug(f"Step user - handle input {user_input}")
+            _LOGGER.debug(f"Step user - handle input {async_redact_data(user_input, DIAGNOSTICS_REDACT)}")
             
             self._username = user_input.get(CONF_USERNAME, '')
             self._password = user_input.get(CONF_PASSWORD, '')
@@ -259,7 +260,12 @@ class ConfigFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     
     async def async_step_finish(self, user_input=None) -> FlowResult:
         """Configuration has finished"""
-        
+
+        # Write credentials into persistant cache
+        self._coordinator._install_id = self._install_id
+        self._coordinator._install_name = self._install_name
+        await self._coordinator.async_on_unload()
+
         # Use install_id as unique_id for this config flow to avoid the same hub being setup twice
         await self.async_set_unique_id(self._install_id)
         self._abort_if_unique_id_configured()

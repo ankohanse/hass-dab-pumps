@@ -574,11 +574,16 @@ class DabPumpsApiWrap(AsyncDabPumps):
         device_config_dict = self._cache.get(f"device_config_map {install_id}", {})
         device_state_dict = self._cache.get(f"device_state_map {install_id}", {})
 
-        if not install_dict or not device_dict or not device_config_dict or not device_state_dict:
-            raise Exception(f"Not all data found in {self._cache.key}")
+        # Initialize login and refresh token info
+        if not login_info_dict or not refresh_token_dict:
+            raise Exception(f"Not all info found in {self._cache.key}")
         
         self._login_info = DabPumpsLoginInfo(**login_info_dict)
         self._refresh_token_info = DabPumpsRefreshTokenInfo(**refresh_token_dict)
+
+        # Initialize install and device maps
+        if not install_dict or not device_dict or not device_config_dict or not device_state_dict:
+            raise Exception(f"Not all data found in {self._cache.key}")
         
         self._install_map.update( { k:DabPumpsInstall(**v) for k,v in install_dict.items() } )
         self._device_map.update( { k:DabPumpsDevice(**v) for k,v in device_dict.items() } )
