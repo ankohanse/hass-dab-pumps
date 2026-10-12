@@ -27,8 +27,9 @@ from pydabpumps import (
     DabPumpsUserRole,
     DabPumpsHistoryItem,
     DabPumpsHistoryDetail,
-    DabPumpsConnectError,
     DabPumpsAuthError,
+    DabPumpsConnectError,
+    DabPumpsLoginAbortedError,
 ) 
 
 from .const import (
@@ -274,7 +275,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         self._update_statistics(retries = retry, duration = utcnow()-ts_start)
 
         if ex_first:
-            if isinstance(ex_first, (DabPumpsConnectError,DabPumpsAuthError)):
+            if isinstance(ex_first, (DabPumpsConnectError,DabPumpsAuthError,DabPumpsLoginAbortedError)):
                 # Log as info, not warning, as we expect the issue to be gone at a next data refresh
                 _LOGGER.info(ex_first)
             else:
