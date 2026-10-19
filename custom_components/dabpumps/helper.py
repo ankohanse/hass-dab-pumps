@@ -74,10 +74,10 @@ class DabPumpsEntityHelper:
             if config is None or state is None:
                 continue
 
-            for key, params in config.meta_params.items():
+            status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
 
+            for key, params in config.meta_params.items():
                 status = state.status.get(key)
-                status_ts = state.status_ts
 
                 platform = self._get_entity_platform(key, params, status)
                 if platform != target_platform:

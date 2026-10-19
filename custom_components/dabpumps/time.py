@@ -102,7 +102,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
             return 
         
         status = state.status.get(self._status_key)
-        status_ts = state.status_ts
+        status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
 
         # Update any attributes
         if self._update_attributes(status, status_ts):
