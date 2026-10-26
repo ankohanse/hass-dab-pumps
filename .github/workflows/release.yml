@@ -6,7 +6,7 @@ on:
 
 jobs:
   release:
-    name: SmartWater release
+    name: DabPumps release
     runs-on: ubuntu-latest
     permissions:
       contents: write
