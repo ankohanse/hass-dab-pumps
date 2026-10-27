@@ -1,8 +1,5 @@
 """
-Data definitions for Smart Water and Gallagher Water integrations.
-
-Note that this file is shared as is between the two integrations. 
-Do not place code that is specific to only one of these integration in here!
+Data definitions for Dab Pumps integrations.
 """
 import logging
 
@@ -27,6 +24,8 @@ from homeassistant.const import UnitOfVolumeFlowRate
 from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfTime
 
+from pydabpumps import DabPumpsUserRole, DabPumpsParams
+
 
 # Define logger
 _LOGGER = logging.getLogger(__name__)
@@ -46,7 +45,15 @@ class ParamStateClass(StrEnum):
 
 class ParamFlags(StrEnum):
     HIDDEN_AS_DISABLED = 'h=d'  # Interpret a 'h' (hidden) status-code as 'd' (disabled)
+    NO_EXPIRE = "!exp"
 
+# Helper list containing all possible user roles
+USER_ROLES_ALL = [r for r in DabPumpsUserRole]
+
+# Extra (virtual) parameters
+DEVICE_CONFIG_EXTRA_PARAMS = {
+    "State":  DabPumpsParams(name='Connection status',  type='label', unit='', weight=1, values=None, min=None, max=None, family='extra', group='Device', view=USER_ROLES_ALL, change=[]),
+}
 
 @dataclass
 class PI:
@@ -152,6 +159,9 @@ PARAM_INFOS = [
     PI(grp="ModbusDevice",         key="",                                vis=False),
     PI(grp="ModbusSlave",          key="",                                vis=False),
 
+    # Extra/Virtual groups
+    PI(grp="Device",               key="",                                vis=True,  mod=False, cat="diag", cls="meas", flg=['!exp']),
+
     # All other groups not yet known will be made visible
     PI(grp="",                     key="",                                vis=True,  mod=False, cat="sens", cls="meas"),
 ]
@@ -172,11 +182,11 @@ class ParamInfo(PI):
 
 @dataclass
 class UI:
-    dp_unit: str                # DabPumps unit
-    ha_unit: str                # Home Assistant unit
-    icon: str                   # Icon
-    num_cls: NumberDeviceClass  # DeviceClass for Number entities
-    sen_cls: SensorDeviceClass  # DeviceClass for sensor entities
+    dp_unit: str = None                # DabPumps unit
+    ha_unit: str = None                # Home Assistant unit
+    icon: str = None                   # Icon
+    num_cls: NumberDeviceClass = None  # DeviceClass for Number entities
+    sen_cls: SensorDeviceClass = None  # DeviceClass for sensor entities
 
 UNIT_INFOS = [
     UI(dp_unit='*°C',       ha_unit=UnitOfTemperature.CELSIUS,               icon='mdi:thermometer',    num_cls=NumberDeviceClass.TEMPERATURE,      sen_cls=SensorDeviceClass.TEMPERATURE),
@@ -216,12 +226,14 @@ UNIT_INFOS = [
     UI(dp_unit='Address',   ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit='SW. Vers.', ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
     UI(dp_unit='T',         ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
+
+    # Keep as last
     UI(dp_unit='',          ha_unit=None,                                    icon=None,                 num_cls=None,                               sen_cls=None),
 ]
             
 
 class UnitInfo(UI):
-    def __init__(self, ui: UI):
+    def __init__(self, ui: UI=None):
         super().__init__(**asdict(ui))
 
 
@@ -231,4 +243,4 @@ class UnitInfo(UI):
         # Loop over list to find the first match
         # Note we use a wildcard match because sometimes weird extra characters are defined in
         # front of temperature units (°C and °F)
-        return next( (UnitInfo(ui) for ui in UNIT_INFOS if fnmatch(unit or '', ui.dp_unit)), None )
+        return next( (UnitInfo(ui) for ui in UNIT_INFOS if fnmatch(unit or '', ui.dp_unit) or ui.dp_unit==''), None)

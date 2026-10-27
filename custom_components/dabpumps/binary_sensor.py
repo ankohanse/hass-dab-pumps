@@ -32,6 +32,9 @@ from .const import (
 from .coordinator import (
     DabPumpsCoordinator,
 )
+from .data import (
+    ParamFlags,
+)
 from .entity import (
     DabPumpsEntity,
 )
@@ -87,6 +90,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         
         # update creation-time only attributes
         self._attr_device_class = self._get_device_class()
+        self._attr_entity_category = self.get_entity_category()
 
         # Create all value related attributes
         self._update_attributes(status, status_ts, force=True)
@@ -105,9 +109,11 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         if state is None:
             return 
         
-        status = state.status.get(self._status_key)
         status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
-
+        status = state.status.get(self._status_key)
+        if status is None:
+            return
+        
         # Update any attributes
         if self._update_attributes(status, status_ts):
             self.async_write_ha_state()
@@ -119,7 +125,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         """
         
         # Is the status expired?
-        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow() or ParamFlags.NO_EXPIRE in self._param_info.flg:
         
             # Not expired.
             # Use original status.code, not translated status.value to compare

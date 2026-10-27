@@ -1,3 +1,4 @@
+import copy
 import logging
 import re
 
@@ -50,6 +51,9 @@ from .api import (
     DabPumpsApiFactory,
     DabPumpsApiWrap,
     DabPumpsFetchOrder,
+)
+from .data import (
+    DEVICE_CONFIG_EXTRA_PARAMS,
 )
 
 # Define logger
@@ -161,7 +165,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
             name=NAME,
             # Polling interval. Will only be polled if there are subscribers.
             update_interval=timedelta(seconds=DEFAULT_POLLING_INTERVAL),
-            update_method=self._async_update_data,
+            update_method=self._async_fetch_data,
         )
 
         self._config_entry_id: str = config_entry_id
@@ -185,8 +189,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
         self._reload_delay: int = COORDINATOR_RELOAD_DELAY
 
         # Properties that are cached for performance
-        self._user_role = None
-        self._config_includes_free_account = None
+        self._user_role: DabPumpsUserRole = None
+        self._config_includes_free_account: bool = None
+        self._device_config_extra_params: dict[str, DabPumpsParams] = None
         
 
     @staticmethod
@@ -459,7 +464,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
             return None
 
     
-    async def _async_update_data(self):
+    async def _async_fetch_data(self):
         """
         Fetch sensor data from API.
         
@@ -482,20 +487,46 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
             #_LOGGER.debug(f"device_map: {self._api.device_map}")
             #_LOGGER.debug(f"config_map: {self._api.device_config_map}")
             #_LOGGER.debug(f"status_map: {self._api.device_state_map}")
-            return (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
+            return self._combine_data()
         
         except Exception as ex:
             raise UpdateFailed(f"Failed to request values from the api: {ex}") from ex    
-
+        
 
     @callback
     async def _async_push_data(self, device_serial:str):
         """
         Push new sensor data from API to all our listening entities.
         """
-        self.data = (self._api.device_map, self._api.device_config_map, self._api.device_state_map)
+        self.data = self._combine_data(device_serial)
         self.async_update_listeners()
 
+
+    def _combine_data(self, updated_serial:str = None):
+        """
+        Add extra/virtual meta_params and related status values
+        """
+        device_map =        copy.deepcopy(self._api.device_map)
+        device_config_map = copy.deepcopy(self._api.device_config_map)
+        device_state_map  = copy.deepcopy(self._api.device_state_map)
+
+        # Prepare extra meta params if not available yet
+        if self._device_config_extra_params is None:
+            self._device_config_extra_params = copy.deepcopy(DEVICE_CONFIG_EXTRA_PARAMS)
+            for param in self._device_config_extra_params.values():
+                param.name = self._api._translate_string(param.name)
+                param.values = { k:self._api._translate_string(v) for k,v in param.values.items() } if param.values is not None else None
+
+        # Add extra meta params to each device config
+        for device_config in device_config_map.values():
+            device_config.meta_params = device_config.meta_params | self._device_config_extra_params
+
+        # Add extra status values to each device state
+        for device_state in device_state_map.values():
+            device_state.status["State"]  = DabPumpsStatus(code=device_state.state, value=self._api._translate_string(device_state.state) )
+
+        return (device_map, device_config_map, device_state_map)
+    
 
     async def _async_detect_changes(self):
         """Detect changes in the installation and trigger a integration reload if needed"""
@@ -536,14 +567,20 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
         """
         return {
             "data": {
-                "install_id": self._install_id,
+                "install_id": self.install_id,
+                "install_name": self.install_name,
                 "user_name": self.user_name,
                 "user_role": self.user_role,
                 "language": self.language,
                 "language_sys": self.system_language(),
+                "valid_unique_ids": self._valid_unique_ids,
+                "valid_device_ids": self._valid_device_ids,
+                "device_config_extra_params": self._device_config_extra_params,
             },
             "diagnostics": {
                 "reload_count": self.reload_count,
+                "reload_time": self.reload_time,
+                "reload_delay": self.reload_delay,
             },
         }
     

@@ -34,6 +34,9 @@ from .const import (
 from .coordinator import (
     DabPumpsCoordinator,
 )
+from .data import (
+    ParamFlags,
+)
 from .entity import (
     DabPumpsEntity,
 )
@@ -96,8 +99,10 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         if state is None:
             return 
         
-        status = state.status.get(self._status_key)
         status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
+        status = state.status.get(self._status_key)
+        if status is None:
+            return
 
         # Update any attributes
         if self._update_attributes(status, status_ts):
@@ -108,9 +113,9 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         """
         Set entity value, unit and icon
         """
-          
+
         # Is the status expired?
-        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow() or ParamFlags.NO_EXPIRE in self._param_info.flg:
 
             if status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
                 attr_val = status.value

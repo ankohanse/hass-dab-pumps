@@ -2,9 +2,7 @@
 from datetime import datetime, timezone
 import logging
 
-from homeassistant.const import (
-    CONF_PASSWORD,
-)
+from homeassistant.const import CONF_PASSWORD
 from homeassistant.const import Platform
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -86,8 +84,8 @@ LANGUAGE_MAP = {
 LANGUAGE_TEXT_AUTO ="Auto (use system setting: {0})"
 LANGUAGE_TEXT_FALLBACK ="Auto (use default: {0})"
 
-BINARY_SENSOR_VALUES_ON = ['1', 'active']
-BINARY_SENSOR_VALUES_OFF = ['0', 'disactive', 'inactive']
+BINARY_SENSOR_VALUES_ON = ['1', 'True', 'active']
+BINARY_SENSOR_VALUES_OFF = ['0', 'False', 'disactive', 'inactive']
 BINARY_SENSOR_VALUES_ALL = BINARY_SENSOR_VALUES_ON + BINARY_SENSOR_VALUES_OFF
 
 SWITCH_VALUES_ON = ['1', 'Enable']
@@ -103,7 +101,6 @@ COORDINATOR_RELOAD_DELAY = 1*60*60 # 1 hour in seconds
 COORDINATOR_RELOAD_DELAY_MAX = 24*60*60 # 24 hours in seconds
 
 STATUS_VALIDITY_PERIOD = 15*60 # 15 minutes in seconds
-
 
 # Global helper functions
 utcnow = lambda: datetime.now(timezone.utc)

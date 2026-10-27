@@ -243,7 +243,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
                     case DabPumpsFetchMethod.WEB:
                         # Once a day, attempt to refresh
                         # - list of translations
-                        await self._async_poll_strings(self._language, expiry=24*60*60, ignore=ignore_periodic_refresh)
+                        await self._async_poll_strings(self._language, expiry=24*60*60, ignore=True)
 
                         # Once an hour, attempt to refresh
                         # - list of installations (just for diagnostics)
@@ -455,9 +455,13 @@ class DabPumpsApiWrap(AsyncDabPumps):
             await super().fetch_install_details(install_id)
             self._fetch_ts[context] = utcnow()
 
-            # The call above alredy has retrieved all statuses for this install
-            for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
+            # The call above already has retrieved all statuses for this install. Mark them as freshly fetched.
+            install_serials = [ d.serial for d in self._device_map.values() if d.install_id==install_id ]
+            for serial in install_serials:
                 context = f"statuses {serial}"
+                self._fetch_ts[context] = utcnow()
+
+                context = f"state {serial}"
                 self._fetch_ts[context] = utcnow()
 
         except Exception as e:
@@ -472,24 +476,43 @@ class DabPumpsApiWrap(AsyncDabPumps):
         """
         Fetch device statuses for all devices in an install
         """
-
-        # Check for expired device statuses. 
-        # Devices are subscribed to cloud updates so could be updated from outside of this function
         expired = []
-        for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
+        inconsistent = []
+        install_serials = [ d.serial for d in self._device_map.values() if d.install_id==install_id ]
+
+        for serial in install_serials:
+
+            # Check for expired device statuses. 
+            # Devices are subscribed to cloud updates so could be updated from outside of this function
             context = f"statuses {serial}"
             if (utcnow() - self._fetch_ts.get(context, utcmin())).total_seconds() > expiry:
                 expired.append(serial)
 
-        if not expired:
+            # Check for inconsistent device state, i.e. when state.online boolean contradicts state.state string
+            context = f"state {serial}"
+            if (utcnow() - self._fetch_ts.get(context, utcmin())).total_seconds() > expiry:
+
+                device_state = self._device_state_map.get(serial)
+                if device_state is not None:
+                    offline1 = not device_state.online
+                    offline2 = device_state.state == "OFFLINE"
+                    if offline1 != offline2:
+                        inconsistent.append(serial)
+        
+        if not expired and not inconsistent:
             return
 
         try:
             await super().login()
             await super().fetch_install_statuses(install_id)    # The api will always fetch status for all devices
 
-            for serial in [ d.serial for d in self._device_map.values() if d.install_id==install_id ]:
+            # Mark all statuses within this install as freshly fetched.
+            for serial in expired:
                 context = f"statuses {serial}"
+                self._fetch_ts[context] = utcnow()
+
+            for serial in inconsistent:
+                context = f"state {serial}"
                 self._fetch_ts[context] = utcnow()
 
         except Exception as e:
