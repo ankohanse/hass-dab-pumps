@@ -15,33 +15,11 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import datetime, timedelta
-
-from pydabpumps import (
-    DabPumpsDevice,
-    DabPumpsParams,
-    DabPumpsStatus
-)
-
-from .const import (
-    BINARY_SENSOR_VALUES_ON,
-    BINARY_SENSOR_VALUES_OFF,
-    STATUS_VALIDITY_PERIOD,
-    utcnow,
-)
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-from .data import (
-    ParamFlags,
-)
-from .entity import (
-    DabPumpsEntity,
-)
-from .helper import (
-    DabPumpsEntityHelper,
-)
-
+from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsStatus
+from .const import BINARY_SENSOR_VALUES_ON, BINARY_SENSOR_VALUES_OFF
+from .coordinator import DabPumpsCoordinator
+from .entity import DabPumpsEntity
+from .helper import DabPumpsEntityHelper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,7 +45,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
     Could be a sensor that is part of a pump like ESybox, Esybox.mini
     Or could be part of a communication module like DConnect Box/Box2
     """
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -93,7 +71,7 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         self._attr_entity_category = self.get_entity_category()
 
         # Create all value related attributes
-        self._update_attributes(status, status_ts, force=True)
+        self._update_attributes(status, force=True)
     
     
     @callback
@@ -106,42 +84,28 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         (_, _, device_state_map) = self._coordinator.data
         
         state = device_state_map.get(self._device.serial) if device_state_map is not None else None
-        if state is None:
-            return 
-        
-        status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
-        status = state.status.get(self._status_key)
-        if status is None:
-            return
+        status = state.status.get(self._status_key) if state is not None else None
         
         # Update any attributes
-        if self._update_attributes(status, status_ts):
+        if self._update_attributes(status):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force: bool = False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
-        
-        # Is the status expired?
-        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow() or ParamFlags.NO_EXPIRE in self._param_info.flg:
-        
-            # Not expired.
-            # Use original status.code, not translated status.value to compare
-            if status.code in BINARY_SENSOR_VALUES_ON:
-                is_on = True
-            elif status.code in BINARY_SENSOR_VALUES_OFF:
-                is_on = False
-            else:
-                # No value available
-                is_on = None
+        # Use original status.code, not translated status.value to compare
+        if status is not None and status.code in BINARY_SENSOR_VALUES_ON:
+            is_on = True
+        elif status is not None and status.code in BINARY_SENSOR_VALUES_OFF:
+            is_on = False
         else:
-            # Expired
+            # No value available
             is_on = None
             
         # update value if it has changed
-        changed = super()._update_attributes(status, status_ts, force)
+        changed = super()._update_attributes(status, force)
 
         if force or self._attr_is_on != is_on:
             

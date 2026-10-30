@@ -1,5 +1,7 @@
 import logging
 
+from datetime import time
+
 from homeassistant.components.time import TimeEntity
 from homeassistant.components.time import ENTITY_ID_FORMAT
 from homeassistant.config_entries import ConfigEntry
@@ -9,31 +11,10 @@ from homeassistant.core import callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from datetime import datetime, time
-from datetime import timedelta
-
-from pydabpumps import (
-    DabPumpsDevice,
-    DabPumpsParams,
-    DabPumpsParamType,
-    DabPumpsStatus,
-    DabPumpsStatusCode
-)
-
-from .const import (
-    STATUS_VALIDITY_PERIOD,
-    utcnow,
-)
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-from .entity import (
-    DabPumpsEntity,
-)
-from .helper import (
-    DabPumpsEntityHelper,
-)
-
+from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsParamType, DabPumpsStatus, DabPumpsStatusCode
+from .coordinator import DabPumpsCoordinator
+from .entity import DabPumpsEntity
+from .helper import DabPumpsEntityHelper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +34,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -85,7 +66,7 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         self._attr_native_step = attr_step
 
         # Create all value related attributes
-        self._update_attributes(status, status_ts, force=True)
+        self._update_attributes(status, force=True)
     
     
     @callback
@@ -98,45 +79,35 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         (_, _, device_state_map) = self._coordinator.data
         
         state = device_state_map.get(self._device.serial) if device_state_map is not None else None
-        if state is None:
-            return 
+        status = state.status.get(self._status_key) if state is not None else None
         
-        status = state.status.get(self._status_key)
-        status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
-
         # Update any attributes
-        if self._update_attributes(status, status_ts):
+        if self._update_attributes(status):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force: bool = False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, force: bool = False) -> bool:
         """
         Set entity value, unit and icon
         """
         
-        # Is the status expired?
-        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        if status is not None and status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
 
-            if status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
-                # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (24:00).
-                # TimeEntity expects time object and can only be between 00:00 and 23:59
-                # We sneakily replace value 86340 (24:00) into 23:59
-                if int(status.value) >= 86340:
-                    attr_val = time(23, 59)
-                else:
-                    hour = int(status.value // 3600)
-                    minute = int( (status.value % 3600) // 60)
-                    attr_val = time(hour, minute)
+            # DAB Pumps value is seconds since midnight with values between 0 (00:00) and 86340 (24:00).
+            # TimeEntity expects time object and can only be between 00:00 and 23:59
+            # We sneakily replace value 86340 (24:00) into 23:59
+            if int(status.value) >= 86340:
+                attr_val = time(23, 59)
             else:
-                # No value available
-                attr_val = None
-
+                hour = int(status.value // 3600)
+                minute = int( (status.value % 3600) // 60)
+                attr_val = time(hour, minute)
         else:
-            # Expired
+            # No value available
             attr_val = None
 
         # update value if it has changed
-        changed = super()._update_attributes(status, status_ts, force)
+        changed = super()._update_attributes(status, force)
 
         if force or self._attr_native_value != attr_val:
 
@@ -161,5 +132,5 @@ class DabPumpsTime(CoordinatorEntity, TimeEntity, DabPumpsEntity):
         
         status = await self._coordinator.async_modify_data(self._device.serial, self._status_key, self.entity_id, value=entity_value)
         if status is not None:
-            self._update_attributes(status, utcnow(), force=True)
+            self._update_attributes(status, force=True)
             self.async_write_ha_state()

@@ -1,13 +1,14 @@
 """api.py: DabPumps API for DAB Pumps integration."""
 
 import asyncio
-from dataclasses import asdict
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Any, Final, List
 import httpx
 import logging
 import ssl
+
+from dataclasses import asdict
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Final, Iterable
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import httpx_client as hass_httpx_client
@@ -286,7 +287,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         return False
     
 
-    async def async_subscribe_to_push_data(self, devices: List[DabPumpsDevice], callback):
+    async def async_subscribe_to_push_data(self, device_serials: Iterable[str], callback):
         """
         Subscribe to changes in device state
         """
@@ -295,8 +296,8 @@ class DabPumpsApiWrap(AsyncDabPumps):
             self._async_data_listener = callback
 
             # Register listeners for changes in remote data
-            for device in devices:
-                await super().on_device_state(device.serial, self._on_device_state_handler)
+            for serial in device_serials:
+                await super().on_device_state(serial, self._on_device_state_handler)
 
         except Exception as e:
             _LOGGER.info(f"{e}")

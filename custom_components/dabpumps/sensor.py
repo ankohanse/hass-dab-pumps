@@ -13,37 +13,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.helpers.significant_change import check_percentage_change
 
 from datetime import datetime
-from datetime import timezone
-from datetime import timedelta
 
-from collections import defaultdict
-from collections import namedtuple
-
-from pydabpumps import (
-    DabPumpsDevice,
-    DabPumpsParams,
-    DabPumpsStatus,
-    DabPumpsStatusCode
-)
-
-from .const import (
-    DOMAIN,
-    STATUS_VALIDITY_PERIOD,
-    utcnow,
-)
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-from .data import (
-    ParamFlags,
-)
-from .entity import (
-    DabPumpsEntity,
-)
-from .helper import (
-    DabPumpsEntityHelper,
-)
-
+from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsStatus, DabPumpsStatusCode
+from .coordinator import DabPumpsCoordinator
+from .entity import DabPumpsEntity
+from .helper import DabPumpsEntityHelper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,7 +37,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -83,7 +57,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         self._attr_device_class = self.get_sensor_device_class() 
         
         # Create all value related attributes
-        self._update_attributes(status, status_ts, force=True)
+        self._update_attributes(status, force=True)
     
     
     @callback
@@ -96,34 +70,21 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
         (_, _, device_state_map) = self._coordinator.data
         
         state = device_state_map.get(self._device.serial) if device_state_map is not None else None
-        if state is None:
-            return 
-        
-        status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
-        status = state.status.get(self._status_key)
-        if status is None:
-            return
+        status = state.status.get(self._status_key) if state is not None else None
 
         # Update any attributes
-        if self._update_attributes(status, status_ts):
+        if self._update_attributes(status):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force:bool=False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
         """
         Set entity value, unit and icon
         """
-
-        # Is the status expired?
-        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow() or ParamFlags.NO_EXPIRE in self._param_info.flg:
-
-            if status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
-                attr_val = status.value
-            else:
-                # No value available
-                attr_val = None
+        if status is not None and status.value is not None and status.code not in [DabPumpsStatusCode.HIDDEN, DabPumpsStatusCode.DISABLED]:
+            attr_val = status.value
         else:
-            # Expired
+            # No value available
             attr_val = None
 
         # Gather other attributes
@@ -158,7 +119,7 @@ class DabPumpsSensor(CoordinatorEntity, SensorEntity, DabPumpsEntity):
                 attr_val = self._attr_native_value
 
         # update value if it has changed
-        changed = super()._update_attributes(status, status_ts, force)
+        changed = super()._update_attributes(status, force)
 
         if force or self._attr_native_value != attr_val:
 

@@ -45,7 +45,6 @@ class ParamStateClass(StrEnum):
 
 class ParamFlags(StrEnum):
     HIDDEN_AS_DISABLED = 'h=d'  # Interpret a 'h' (hidden) status-code as 'd' (disabled)
-    NO_EXPIRE = "!exp"
 
 # Helper list containing all possible user roles
 USER_ROLES_ALL = [r for r in DabPumpsUserRole]
@@ -160,7 +159,7 @@ PARAM_INFOS = [
     PI(grp="ModbusSlave",          key="",                                vis=False),
 
     # Extra/Virtual groups
-    PI(grp="Device",               key="",                                vis=True,  mod=False, cat="diag", cls="meas", flg=['!exp']),
+    PI(grp="Device",               key="",                                vis=True,  mod=False, cat="diag", cls="meas"),
 
     # All other groups not yet known will be made visible
     PI(grp="",                     key="",                                vis=True,  mod=False, cat="sens", cls="meas"),

@@ -1,7 +1,7 @@
-from dataclasses import dataclass
-from datetime import datetime
 import logging
 
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Self
 
 from homeassistant.components.number import NumberDeviceClass
@@ -11,27 +11,10 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
-from .const import (
-    DOMAIN,
-    ATTR_STORED_CODE,
-    ATTR_STORED_VALUE,
-    ATTR_STORED_TS,
-    utcnow,
-)
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-from .data import (
-    ParamCategory,
-    ParamInfo,
-    ParamStateClass,
-    UnitInfo,
-)
-from pydabpumps import (
-    DabPumpsDevice,
-    DabPumpsParams,
-    DabPumpsStatus,
-)
+from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsStatus
+from .const import DOMAIN, ATTR_STORED_CODE, ATTR_STORED_VALUE
+from .coordinator import DabPumpsCoordinator
+from .data import ParamCategory, ParamInfo, ParamStateClass, UnitInfo
 
 # Define logger
 _LOGGER = logging.getLogger(__name__)
@@ -43,14 +26,12 @@ class DabPumpsEntityExtraData(ExtraStoredData):
 
     code: str = None
     value: str = None
-    ts: datetime = None
 
     def as_dict(self) -> dict[str, Any]:
         """Return a dict representation of the sensor data."""
         return {
             ATTR_STORED_CODE: self.code,
             ATTR_STORED_VALUE: self.value,
-            ATTR_STORED_TS: self.ts,
         }
 
     @classmethod
@@ -60,7 +41,6 @@ class DabPumpsEntityExtraData(ExtraStoredData):
         return cls(
             code = restored.get(ATTR_STORED_CODE),
             value = restored.get(ATTR_STORED_VALUE),
-            ts = restored.get(ATTR_STORED_TS),
         )
 
 
@@ -93,7 +73,6 @@ class DabPumpsEntity(RestoreEntity):
         # Attributes to be restored in the next HA run
         self._status_code: str = None
         self._status_value: str = None
-        self._status_ts: datetime = None
 
 
     @property
@@ -122,7 +101,6 @@ class DabPumpsEntity(RestoreEntity):
         return DabPumpsEntityExtraData(
             code = self._status_code,
             value = self._status_value,
-            ts = self._status_ts,
         )
     
 
@@ -144,18 +122,14 @@ class DabPumpsEntity(RestoreEntity):
                 code = dict_extra.get(ATTR_STORED_CODE),
                 value = dict_extra.get(ATTR_STORED_VALUE),
             )
-            status_ts = dict_extra.get(ATTR_STORED_TS)
-
-            if status_ts and isinstance(status_ts, str):
-                status_ts = datetime.fromisoformat(status_ts)
 
             # Reduce tracing during startup. Can enable for specific development debugging
-            #_LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code}) with ts: {status.status_ts}")
+            #_LOGGER.debug(f"Restore entity '{self.entity_id}' value to {last_state.state} ({status.code})")
         
-            self._update_attributes(status, status_ts, force=True)
+            self._update_attributes(status, force=True)
     
 
-    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force:bool=False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
         """
         Process any changes in value
         
@@ -163,10 +137,9 @@ class DabPumpsEntity(RestoreEntity):
         """
         changed = False
 
-        if self._status_code != status.code or self._status_value != status.value or self._status_ts != status_ts:
+        if self._status_code != status.code or self._status_value != status.value:
             self._status_code = status.code
             self._status_value = status.value
-            self._status_ts = status_ts
             changed = True
 
         return changed

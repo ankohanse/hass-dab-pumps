@@ -5,30 +5,13 @@ from dataclasses import dataclass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-import homeassistant.helpers.entity_registry as entity_registry
-
-from pydabpumps import (
-    DabPumpsParams,
-    DabPumpsStatus,
-    DabPumpsStatusCode,
-)
-from .const import (
-    PLATFORMS,
-    BINARY_SENSOR_VALUES_ALL,
-    SWITCH_VALUES_ALL,
-    BUTTON_VALUES_ALL,
-)
-from .coordinator import (
-    DabPumpsCoordinatorFactory,
-    DabPumpsCoordinator,
-)
-from .data import (
-    ParamFlags,
-    ParamInfo,
-)
-
+from pydabpumps import DabPumpsParams, DabPumpsStatus, DabPumpsStatusCode
+from .const import BINARY_SENSOR_VALUES_ALL, SWITCH_VALUES_ALL, BUTTON_VALUES_ALL
+from .coordinator import DabPumpsCoordinatorFactory
+from .data import ParamFlags, ParamInfo
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -74,8 +57,6 @@ class DabPumpsEntityHelper:
             if config is None or state is None:
                 continue
 
-            status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
-
             for key, params in config.meta_params.items():
                 status = state.status.get(key)
 
@@ -87,7 +68,7 @@ class DabPumpsEntityHelper:
                 # Create a Sensor, Binary_Sensor, Number, Select, Switch or other entity for this status
                 entity = None                
                 try:
-                    entity = target_class(self._coordinator, key, device, params, status, status_ts)
+                    entity = target_class(self._coordinator, key, device, params, status)
                     entities.append(entity)
                     
                     valid_unique_ids.append(entity.unique_id)

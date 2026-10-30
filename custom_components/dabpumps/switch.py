@@ -15,36 +15,11 @@ from homeassistant.const import (
     STATE_OFF,
 )
 
-from datetime import datetime
-from datetime import timezone
-from datetime import timedelta
-
-from collections import defaultdict
-from collections import namedtuple
-
-from pydabpumps import (
-    DabPumpsDevice,
-    DabPumpsParams,
-    DabPumpsStatus
-)
-
-from .const import (
-    DOMAIN,
-    SWITCH_VALUES_ON,
-    SWITCH_VALUES_OFF,
-    STATUS_VALIDITY_PERIOD,
-    utcnow,
-)
-from .coordinator import (
-    DabPumpsCoordinator,
-)
-from .entity import (
-    DabPumpsEntity,
-)
-from .helper import (
-    DabPumpsEntityHelper,
-)
-
+from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsStatus
+from .const import SWITCH_VALUES_ON, SWITCH_VALUES_OFF
+from .coordinator import DabPumpsCoordinator
+from .entity import DabPumpsEntity
+from .helper import DabPumpsEntityHelper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -64,7 +39,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
     Or could be part of a communication module like DConnect Box/Box2
     """
     
-    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus, status_ts: datetime) -> None:
+    def __init__(self, coordinator: DabPumpsCoordinator, status_key: str, device: DabPumpsDevice, params: DabPumpsParams, status: DabPumpsStatus) -> None:
         """ 
         Initialize the sensor. 
         """
@@ -89,7 +64,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         self._attr_device_class = SwitchDeviceClass.SWITCH
         
         # Create all value related attributes
-        self._update_attributes(status, status_ts, force=True)
+        self._update_attributes(status, force=True)
     
     
     @callback
@@ -100,45 +75,34 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         (_, _, device_state_map) = self._coordinator.data
         
         state = device_state_map.get(self._device.serial) if device_state_map is not None else None
-        if state is None:
-            return 
+        status = state.status.get(self._status_key) if state is not None else None
         
-        status = state.status.get(self._status_key)
-        status_ts = max( (ts for ts in [state.status_ts, state.lastrecv_ts] if ts is not None), default=None)
-
         # Update any attributes
-        if self._update_attributes(status, status_ts):
+        if self._update_attributes(status):
             self.async_write_ha_state()
     
     
-    def _update_attributes(self, status: DabPumpsStatus, status_ts: datetime, force:bool=False) -> bool:
+    def _update_attributes(self, status: DabPumpsStatus, force:bool=False) -> bool:
         """
         Set entity value, unit and icon
         """
                 
-        # Is the status expired?
-        if not status_ts or status_ts+timedelta(seconds=STATUS_VALIDITY_PERIOD) > utcnow():
+        # Use original status.code, not translated status.value to compare
+        if status is not None and status.code in SWITCH_VALUES_ON:
+            attr_is_on = True
+            attr_state = STATE_ON
+            
+        elif status is not None and status.code in SWITCH_VALUES_OFF:
+            attr_is_on = False
+            attr_state = STATE_OFF
 
-            # Use original status.code, not translated status.value to compare
-            if status.code in SWITCH_VALUES_ON:
-                attr_is_on = True
-                attr_state = STATE_ON
-                
-            elif status.code in SWITCH_VALUES_OFF:
-                attr_is_on = False
-                attr_state = STATE_OFF
-
-            else:
-                # No value available
-                attr_is_on = None
-                attr_state = None
         else:
-            # Expired
+            # No value available
             attr_is_on = None
             attr_state = None
 
         # update value if it has changed
-        changed = super()._update_attributes(status, status_ts, force)
+        changed = super()._update_attributes(status, force)
 
         if force or self._attr_is_on != attr_is_on:
 
@@ -164,7 +128,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         
         status = await self._coordinator.async_modify_data(self._device.serial, self._status_key, self.entity_id, code=code, value=value)
         if status is not None:
-            self._update_attributes(status, utcnow(), force=True)
+            self._update_attributes(status, force=True)
             self.async_write_ha_state()
     
     
@@ -180,6 +144,6 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         
         status = await self._coordinator.async_modify_data(self._device.serial, self._status_key, self.entity_id, code=code, value=value)
         if status is not None:
-            self._update_attributes(status, utcnow(), force=True)
+            self._update_attributes(status, force=True)
             self.async_write_ha_state()
     
