@@ -51,9 +51,7 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
         # update creation-time only attributes
-        self._dict = { k: v for k,v in params.values.items() }
-
-        self._attr_options = list(self._dict.values())
+        self._attr_options = list(self._params.values.values())
         self._attr_current_option = None
         
         self._attr_entity_category = self.get_entity_category()
@@ -109,7 +107,7 @@ class DabPumpsSelect(CoordinatorEntity, SelectEntity, DabPumpsEntity):
         """
 
         # Pass the status.code and not just the translated status.value
-        (code,value) = next(( (code,value) for code,value in self._dict.items() if value == option), None)
+        (code,value) = next(( (code,value) for code,value in self.params.values.items() if value == option), None)
         if code is None:
             return
 

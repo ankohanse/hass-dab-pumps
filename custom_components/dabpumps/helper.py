@@ -9,7 +9,9 @@ from homeassistant.helpers import entity_registry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from pydabpumps import DabPumpsParams, DabPumpsStatus, DabPumpsStatusCode
-from .const import BINARY_SENSOR_VALUES_ALL, SWITCH_VALUES_ALL, BUTTON_VALUES_ALL
+from .const import BINARY_SENSOR_CODES_ALL, BINARY_SENSOR_VALUES_ALL
+from .const import SWITCH_CODES_ALL, SWITCH_VALUES_ALL
+from .const import BUTTON_CODES_ALL
 from .coordinator import DabPumpsCoordinatorFactory
 from .data import ParamFlags, ParamInfo
 
@@ -27,6 +29,14 @@ class DabPumpsEntityHelper:
         """
         self._coordinator = DabPumpsCoordinatorFactory.create(hass, config_entry)
         self._entity_registry = entity_registry.async_get(hass)
+
+        # Prepare translations of known lists
+        self.BUTTON_CODES = BUTTON_CODES_ALL
+        self.SWITCH_CODES = SWITCH_CODES_ALL
+        self.BINARY_SENSOR_CODES = BINARY_SENSOR_CODES_ALL
+
+        self.SWITCH_VALUES = [ self._coordinator._api._translate_string(v) for v in SWITCH_VALUES_ALL ]
+        self.BINARY_SENSOR_VALUES = [ self._coordinator._api._translate_string(v) for v in BINARY_SENSOR_VALUES_ALL ]
         
     
     async def async_setup_entry(self, target_platform, target_class, async_add_entities: AddEntitiesCallback):
@@ -107,7 +117,7 @@ class DabPumpsEntityHelper:
                 # With exactly 1 possible value that are of 'press' type it becomes a button
                 # These usually do not have a current status code, so don't check for it
                 if len(params.values or []) == 1:
-                    if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
+                    if all(c in self.BUTTON_CODES for c,v in params.values.items()):
                         return Platform.BUTTON
 
             # All options below must have an actual status code, otherwise we suppress it
@@ -118,7 +128,9 @@ class DabPumpsEntityHelper:
             if params.type == 'enum':
                 # With exactly 2 possible values that are of ON/OFF type it becomes a switch
                 if len(params.values or []) == 2:
-                   if all(k in SWITCH_VALUES_ALL and v in SWITCH_VALUES_ALL for k,v in params.values.items()):
+                    #AJH
+                    _LOGGER.debug(f"key: {key}, values:{params.values}, CODES_ALL={self.SWITCH_CODES}, VALUES_ALL={self.SWITCH_VALUES}")
+                    if all(c in self.SWITCH_CODES and v in self.SWITCH_VALUES for c,v in params.values.items()):
                         return Platform.SWITCH
 
                 # With more values or not of ON/OFF type it becomes a Select
@@ -155,12 +167,14 @@ class DabPumpsEntityHelper:
             if params.type == 'enum':
                 # Suppress buttons if we only have view rights
                 if len(params.values or []) == 1:
-                    if all(k in BUTTON_VALUES_ALL for k,v in params.values.items()):
+                    if all(c in self.BUTTON_CODES for c,v in params.values.items()):
                         return None
         
                 # Is it a binary sensor?
                 if len(params.values or []) == 2:
-                    if all(k in BINARY_SENSOR_VALUES_ALL and v in BINARY_SENSOR_VALUES_ALL for k,v in params.values.items()):
+                    #AJH
+                    _LOGGER.debug(f"key: {key}, values:{params.values}, CODES_ALL={self.BINARY_SENSOR_CODES}, VALUES_ALL={self.BINARY_SENSOR_VALUES}")
+                    if all(c in self.BINARY_SENSOR_CODES and v in self.BINARY_SENSOR_VALUES for c,v in params.values.items()):
                         return Platform.BINARY_SENSOR
     
             # Everything else will become a regular sensor

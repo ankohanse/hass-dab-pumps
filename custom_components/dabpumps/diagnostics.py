@@ -84,13 +84,13 @@ def to_dict(obj: Any, dict_factory=dict) -> Any:
 
                 return df(result)
                 
-            elif isinstance(obj, (list,tuple)):
+            elif isinstance(obj, (list,set,tuple)):
                 if hasattr(obj, '_fields'):
                     # namedtuple, Standard asdict will not recurse in to the namedtuple fields and convert them to dicts (using dict_factory).
                     return type(obj)( *[to_dict(v, dict_factory) for v in obj] )
 
                 else:
-                    # standard tuple or a list        
+                    # standard list, set or tuple
                     return type(obj)( to_dict(v, dict_factory) for v in obj )
             
             elif isinstance(obj, dict):

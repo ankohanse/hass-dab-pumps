@@ -51,8 +51,6 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
         # update creation-time only attributes
-        self._dict = { k: v for k,v in params.values.items() }
-
         self._attr_icon = self.get_icon()
 
         self._attr_entity_category = self.get_entity_category()
@@ -93,7 +91,7 @@ class DabPumpsButton(CoordinatorEntity, ButtonEntity, DabPumpsEntity):
         """
 
         # Pass the status.code and not the translated status.value
-        code = next((code for code,value in self._dict.items()), None)
+        code = next((code for code,value in self._params.values.items()), None)
         if code is None:
             return
         

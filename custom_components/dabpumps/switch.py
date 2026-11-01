@@ -16,7 +16,7 @@ from homeassistant.const import (
 )
 
 from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsStatus
-from .const import SWITCH_VALUES_ON, SWITCH_VALUES_OFF
+from .const import SWITCH_CODES_ON, SWITCH_CODES_OFF
 from .coordinator import DabPumpsCoordinator
 from .entity import DabPumpsEntity
 from .helper import DabPumpsEntityHelper
@@ -58,8 +58,6 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         #_LOGGER.debug(f"Create entity '{self.entity_id}'")
         
         # update creation-time only attributes
-        self._dict = { k: v for k,v in params.values.items() }
-
         self._attr_entity_category = self.get_entity_category()
         self._attr_device_class = SwitchDeviceClass.SWITCH
         
@@ -88,11 +86,11 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         """
                 
         # Use original status.code, not translated status.value to compare
-        if status is not None and status.code in SWITCH_VALUES_ON:
+        if status is not None and status.code in SWITCH_CODES_ON:
             attr_is_on = True
             attr_state = STATE_ON
             
-        elif status is not None and status.code in SWITCH_VALUES_OFF:
+        elif status is not None and status.code in SWITCH_CODES_OFF:
             attr_is_on = False
             attr_state = STATE_OFF
 
@@ -122,7 +120,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         """
 
         # Pass the status.code and not just the translated status.value
-        (code,value) = next(( (code,value) for code,value in self._dict.items() if code in SWITCH_VALUES_ON or value in SWITCH_VALUES_ON), None)
+        (code,value) = next(( (code,value) for code,value in self._params.values.items() if code in SWITCH_CODES_ON), None)
         if code is None:
             return
         
@@ -138,7 +136,7 @@ class DabPumpsSwitch(CoordinatorEntity, SwitchEntity, DabPumpsEntity):
         """
 
         # Pass the status.code and not just the translated status.value
-        (code,value) = next(( (code,value) for code,value in self._dict.items() if code in SWITCH_VALUES_OFF or value in SWITCH_VALUES_OFF), None)
+        (code,value) = next(( (code,value) for code,value in self._params.values.items() if code in SWITCH_CODES_OFF), None)
         if code is None:
             return
         

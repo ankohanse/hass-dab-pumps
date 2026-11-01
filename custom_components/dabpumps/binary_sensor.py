@@ -16,7 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from pydabpumps import DabPumpsDevice, DabPumpsParams, DabPumpsStatus
-from .const import BINARY_SENSOR_VALUES_ON, BINARY_SENSOR_VALUES_OFF
+from .const import BINARY_SENSOR_CODES_ON, BINARY_SENSOR_CODES_OFF
 from .coordinator import DabPumpsCoordinator
 from .entity import DabPumpsEntity
 from .helper import DabPumpsEntityHelper
@@ -96,9 +96,9 @@ class DabPumpsBinarySensor(CoordinatorEntity, BinarySensorEntity, DabPumpsEntity
         Set entity value, unit and icon
         """
         # Use original status.code, not translated status.value to compare
-        if status is not None and status.code in BINARY_SENSOR_VALUES_ON:
+        if status is not None and status.code in BINARY_SENSOR_CODES_ON:
             is_on = True
-        elif status is not None and status.code in BINARY_SENSOR_VALUES_OFF:
+        elif status is not None and status.code in BINARY_SENSOR_CODES_OFF:
             is_on = False
         else:
             # No value available

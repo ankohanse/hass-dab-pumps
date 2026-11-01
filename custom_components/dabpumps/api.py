@@ -568,6 +568,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         device_dict = { k:asdict(v) for k,v in self.device_map.items() if v.serial in install_serials }
         device_config_dict = { k:asdict(v) for k,v in self.device_config_map.items() if v.id in install_configs }
         device_state_dict = { k:asdict(v) for k,v in self.device_state_map.items() if k in install_serials }
+        string_dict = { k:v for k,v in self.string_map.items() }
         
         self._cache.set(f"login_info {self._username}", login_info_dict )
         self._cache.set(f"refresh_token_info {self._username}", refresh_token_dict )
@@ -576,6 +577,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         self._cache.set(f"device_map {install_id}", device_dict )
         self._cache.set(f"device_config_map {install_id}", device_config_dict )
         self._cache.set(f"device_state_map {install_id}", device_state_dict )
+        self._cache.set(f"string_map {self._language}", string_dict)
 
         # Note that async_write will reduce the number of writes if needed.
         await self._cache.async_write(force)
@@ -597,6 +599,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         device_dict = self._cache.get(f"device_map {install_id}", {})
         device_config_dict = self._cache.get(f"device_config_map {install_id}", {})
         device_state_dict = self._cache.get(f"device_state_map {install_id}", {})
+        string_dict = self._cache.get(f"string_map {self._language}", {})
 
         # Initialize login and refresh token info
         if not login_info_dict or not refresh_token_dict:
@@ -613,6 +616,7 @@ class DabPumpsApiWrap(AsyncDabPumps):
         self._device_map.update( { k:DabPumpsDevice(**v) for k,v in device_dict.items() } )
         self._device_config_map.update( { k:DabPumpsDeviceConfig(**v) for k,v in device_config_dict.items() } )
         self._device_state_map.update( { k:DabPumpsDeviceState(**v) for k,v in device_state_dict.items() } )
+        self._string_map.update( { k:v for k,v in string_dict.items() } )
 
 
     def _update_statistics(self, retries: int|None = None, duration: timedelta|None = None, fetch: DabPumpsFetchMethod|None = None):

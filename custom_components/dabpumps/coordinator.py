@@ -594,9 +594,9 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
                 "device_state_map": self._device_state_map,
             },
             "diagnostics": {
-                "reload_count": self.reload_count,
-                "reload_time": self.reload_time,
-                "reload_delay": self.reload_delay,
+                "reload_count": self._reload_count,
+                "reload_time": self._reload_time,
+                "reload_delay": self._reload_delay,
             },
         }
     
