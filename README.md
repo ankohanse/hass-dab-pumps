@@ -86,27 +86,11 @@ Therefore it is recommended to create a separate account within DAB Pumps H2D or
 
 # Installation
 
-## HACS
-This custom integration is avalable via HACS (Home Assistant Community Store).
-1. In the HACS page, search for 'DAB Pumps'.
-2. Click on the found item to display its readMe (this page).
-3. At the bottom of the page press 'Download'
-2. Restart Home Assistant.
-3. Follow the UI based [Configuration](#configuration)
-
-
-## Manual install
-1. Under the `<config directory>/custom_components/` directory create a directory called `dabpumps`.
-2. Copy all files and subfolders within `dabpumps.zip` into the new `<config directory>/custom_components/dabpumps/` directory you just created.
-3. Restart Home Assistant.
-4. Follow the UI based [Configuration](#configuration)
-
-# Configuration
-To start the setup of this custom integration:
-- go to Home Assistant's Integration Dashboard
-- Add Integration
-- Search for 'DAB Pumps'
-- Follow the prompts in the configuration step
+This custom integration is available via Home Assistant Marketplace.
+1. Go to Settings → Marketplace and search for 'DAB Pumps'.
+2. Click on the found item to display this readme (this page).
+3. At the top of the page press 'Install'
+5. Follow the displayed setup steps# Installation
 
 ## Step 1 - Connection details
 The following properties are required to connect to the Dab Pumps servers:
