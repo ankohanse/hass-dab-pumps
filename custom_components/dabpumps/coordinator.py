@@ -525,8 +525,8 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
         if self._device_config_extra_params is None:
             self._device_config_extra_params = copy.deepcopy(DEVICE_CONFIG_EXTRA_PARAMS)
             for param in self._device_config_extra_params.values():
-                param.name = self._api._translate_string(param.name)
-                param.values = { k:self._api._translate_string(v) for k,v in param.values.items() } if param.values is not None else None
+                param.name = self.translate_string(param.name)
+                param.values = { k:self.translate_string(v) for k,v in param.values.items() } if param.values is not None else None
 
         # Add extra meta params to each device config.
         for device_config in self._device_config_map.values():
@@ -534,7 +534,7 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
 
         # Add extra status values to each device state. These do not expire
         for device_state in self._device_state_map.values():
-            device_state.status["State"]  = DabPumpsStatus(code=device_state.state, value=self._api._translate_string(device_state.state) )
+            device_state.status["State"]  = DabPumpsStatus(code=device_state.state, value=self.translate_string(device_state.state) )
 
         return (self._device_map, self._device_config_map, self._device_state_map)
     
@@ -570,6 +570,13 @@ class DabPumpsCoordinator(DataUpdateCoordinator[tuple[dict[str,DabPumpsDevice],d
             return True
         
         return False
+
+
+    def translate_string(self, str: str) -> str:
+        """
+        Return 'translated' string or original string if not found
+        """
+        return self._api.string_map.get(str, str) if self._api.string_map else str
 
 
     async def async_get_diagnostics(self) -> dict[str, Any]:

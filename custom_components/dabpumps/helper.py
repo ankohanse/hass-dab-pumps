@@ -35,8 +35,8 @@ class DabPumpsEntityHelper:
         self.SWITCH_CODES = SWITCH_CODES_ALL
         self.BINARY_SENSOR_CODES = BINARY_SENSOR_CODES_ALL
 
-        self.SWITCH_VALUES = [ self._coordinator._api._translate_string(v) for v in SWITCH_VALUES_ALL ]
-        self.BINARY_SENSOR_VALUES = [ self._coordinator._api._translate_string(v) for v in BINARY_SENSOR_VALUES_ALL ]
+        self.SWITCH_VALUES = [ self._coordinator.translate_string(v) for v in SWITCH_VALUES_ALL ]
+        self.BINARY_SENSOR_VALUES = [ self._coordinator.translate_string(v) for v in BINARY_SENSOR_VALUES_ALL ]
         
     
     async def async_setup_entry(self, target_platform, target_class, async_add_entities: AddEntitiesCallback):
