@@ -128,8 +128,6 @@ class DabPumpsEntityHelper:
             if params.type == 'enum':
                 # With exactly 2 possible values that are of ON/OFF type it becomes a switch
                 if len(params.values or []) == 2:
-                    #AJH
-                    _LOGGER.debug(f"key: {key}, values:{params.values}, CODES_ALL={self.SWITCH_CODES}, VALUES_ALL={self.SWITCH_VALUES}")
                     if all(c in self.SWITCH_CODES and v in self.SWITCH_VALUES for c,v in params.values.items()):
                         return Platform.SWITCH
 
@@ -172,8 +170,6 @@ class DabPumpsEntityHelper:
         
                 # Is it a binary sensor?
                 if len(params.values or []) == 2:
-                    #AJH
-                    _LOGGER.debug(f"key: {key}, values:{params.values}, CODES_ALL={self.BINARY_SENSOR_CODES}, VALUES_ALL={self.BINARY_SENSOR_VALUES}")
                     if all(c in self.BINARY_SENSOR_CODES and v in self.BINARY_SENSOR_VALUES for c,v in params.values.items()):
                         return Platform.BINARY_SENSOR
     
